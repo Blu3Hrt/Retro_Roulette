@@ -37,8 +37,9 @@
 ehthumbs.db
 Thumbs.db
 
+games.json
+
 __pycache__/
 venv/
 Games/
 BizHawk/
-games.json
