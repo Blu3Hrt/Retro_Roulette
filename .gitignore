@@ -38,6 +38,7 @@ ehthumbs.db
 Thumbs.db
 
 games.json
+config.json
 
 __pycache__/
 venv/

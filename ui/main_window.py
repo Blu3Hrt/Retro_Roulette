@@ -1,7 +1,9 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit
+from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
-import os
+from config import ConfigManager
+import os, random, subprocess
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -18,6 +20,9 @@ class MainWindow(QMainWindow):
 
         self.game_manager = GameManager()
         self.refresh_game_list()
+        
+        self.config_manager = ConfigManager()
+        self.load_configuration()        
 
     def init_tabs(self):
         # Create tabs for different functionalities
@@ -220,21 +225,143 @@ class MainWindow(QMainWindow):
 
 
     def create_shuffle_management_tab(self):
-        # Placeholder for Shuffle Management tab content
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        # Add widgets to layout here...
+
+        # Button to launch BizHawk
+        launch_bizhawk_button = QPushButton("Launch BizHawk")
+        launch_bizhawk_button.clicked.connect(self.launch_bizhawk)
+        layout.addWidget(launch_bizhawk_button)
+
+        # Shuffle control buttons
+        self.start_shuffle_button = QPushButton("Start Shuffle")
+        self.start_shuffle_button.clicked.connect(self.start_shuffle)
+        layout.addWidget(self.start_shuffle_button)
+
+        self.pause_shuffle_button = QPushButton("Pause Shuffle")
+        self.pause_shuffle_button.clicked.connect(self.pause_shuffle)
+        layout.addWidget(self.pause_shuffle_button)
+
+        self.resume_shuffle_button = QPushButton("Resume Shuffle")
+        self.resume_shuffle_button.clicked.connect(self.resume_shuffle)
+        layout.addWidget(self.resume_shuffle_button)
+
+        # Initialize shuffle state
+        self.is_shuffling = False
+        self.current_game_path = None
+
         return tab
+
+    def launch_bizhawk(self):
+        # Path to the BizHawk executable
+        bizhawk_path = "BizHawk\EmuHawk.exe"  # Update this path
+        try:
+            subprocess.Popen(bizhawk_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to launch BizHawk: {e}")
+
+    def start_shuffle(self):
+        self.is_shuffling = True
+        self.shuffle_games()
+
+    def pause_shuffle(self):
+        self.is_shuffling = False
+        # Logic to pause the game/shuffle
+
+    def resume_shuffle(self):
+        if not self.current_game_path:
+            return
+        self.is_shuffling = True
+        # Logic to resume the game/shuffle
+
+    def shuffle_games(self):
+        if not self.is_shuffling:
+            return
+
+        game_paths = list(self.game_manager.games.keys())
+        next_game_path = random.choice(game_paths)
+
+        if self.current_game_path:
+            self.save_game_state(self.current_game_path)
+
+        self.current_game_path = next_game_path
+        self.load_game(next_game_path)
+        QTimer.singleShot(1000, lambda: self.load_game_state(next_game_path))  # Delay to ensure smooth transition
+
+    def save_game_state(self, game_path):
+        # Use scripting or API to save the current state
+        # Placeholder for the actual implementation
+        self.execute_bizhawk_script("save_state", game_path)
+
+    def load_game(self, game_path):
+        # Use scripting or API to load the new game
+        self.execute_bizhawk_script("load_game", game_path)
+
+    def load_game_state(self, game_path):
+        # Use scripting or API to load the saved state of the new game
+        self.execute_bizhawk_script("load_state", game_path)
+
+    def execute_bizhawk_script(self, action, game_path):
+        # Execute a script or API call to BizHawk
+        # Replace with the actual method of communication with BizHawk
+        command = f"bizhawk_script --action {action} --game \"{game_path}\""
+        subprocess.Popen(command)
 
 
 
 
     def create_configuration_tab(self):
-        # Placeholder for Configuration tab content
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        # Add widgets to layout here...
+
+        # BizHawk Path Configuration
+        self.bizhawk_path_input = QLineEdit()
+        self.bizhawk_path_input.setPlaceholderText("Path to BizHawk executable")
+        browse_bizhawk_button = QPushButton("Browse")
+        browse_bizhawk_button.clicked.connect(self.browse_bizhawk_path)
+        layout.addWidget(self.bizhawk_path_input)
+        layout.addWidget(browse_bizhawk_button)
+
+        # Shuffle Interval Configuration
+        self.min_shuffle_interval_input = QLineEdit()
+        self.min_shuffle_interval_input.setPlaceholderText("Minimum Shuffle Interval (seconds)")
+        self.max_shuffle_interval_input = QLineEdit()
+        self.max_shuffle_interval_input.setPlaceholderText("Maximum Shuffle Interval (seconds)")
+        layout.addWidget(self.min_shuffle_interval_input)
+        layout.addWidget(self.max_shuffle_interval_input)
+
+        # Save Configuration Button
+        save_config_button = QPushButton("Save Configuration")
+        save_config_button.clicked.connect(self.save_configuration)
+        layout.addWidget(save_config_button)
+
         return tab
+
+    def browse_bizhawk_path(self):
+        path = QFileDialog.getOpenFileName(self, "Select BizHawk Executable", "", "Executable Files (*.exe)")[0]
+        if path:
+            self.bizhawk_path_input.setText(path)
+
+    def save_configuration(self):
+        bizhawk_path = self.bizhawk_path_input.text()
+        min_interval = self.min_shuffle_interval_input.text()
+        max_interval = self.max_shuffle_interval_input.text()
+
+        # Perform validation (not shown here)
+        new_config = {
+            'bizhawk_path': bizhawk_path,
+            'min_shuffle_interval': min_interval,
+            'max_shuffle_interval': max_interval
+        }
+
+        self.config_manager.save_config(new_config)
+        QMessageBox.information(self, "Configuration", "Configuration saved successfully")
+
+    def load_configuration(self):
+        config = self.config_manager.config
+        self.bizhawk_path_input.setText(config.get('bizhawk_path', ''))
+        self.min_shuffle_interval_input.setText(str(config.get('min_shuffle_interval', '')))
+        self.max_shuffle_interval_input.setText(str(config.get('max_shuffle_interval', '')))
 
 
 
