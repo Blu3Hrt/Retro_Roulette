@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog
+from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit
 from game_manager import GameManager
 import os
@@ -33,6 +33,12 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
+        # Search bar for filtering games
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search games...")
+        self.search_bar.textChanged.connect(self.filter_games)
+        layout.addWidget(self.search_bar)
+
         # Button for adding multiple games
         add_games_button = QPushButton("Add Games")
         add_games_button.clicked.connect(self.add_games)
@@ -59,8 +65,69 @@ class MainWindow(QMainWindow):
         rename_button = QPushButton("Rename Selected Game")
         rename_button.clicked.connect(self.prompt_rename_game)
         layout.addWidget(rename_button)
+        
+        # Button for setting goals
+        set_goals_button = QPushButton("Set Goals for Selected Game")
+        set_goals_button.clicked.connect(self.prompt_set_game_goals)
+        layout.addWidget(set_goals_button)
+        
+
+        # Label for displaying game details
+        self.game_details_label = QLabel("Select a game to view details")
+        layout.addWidget(self.game_details_label)
+
+        # Update game list widget to connect selection change signal
+        self.game_list.itemSelectionChanged.connect(self.display_game_details)
 
         return tab
+    
+    def prompt_set_game_goals(self):
+        selected_items = self.game_list.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "Information", "No game selected for setting goals")
+            return
+
+        game_name = selected_items[0].text().split(" - ")[0]
+        game_path = self.find_game_path_by_name(game_name)
+        if game_path:
+            current_goals = self.game_manager.games[game_path].get('goals', '')
+            new_goals, ok = QInputDialog.getMultiLineText(self, "Set Goals", "Enter goals for the game:", current_goals)
+            
+            if ok:
+                self.game_manager.set_game_goals(game_path, new_goals)
+                self.refresh_game_list()    
+    
+    def filter_games(self):
+        search_text = self.search_bar.text().lower()
+        for i in range(self.game_list.count()):
+            item = self.game_list.item(i)
+            item.setHidden(search_text not in item.text().lower())
+            
+    def set_selected_game_goals(self):
+        selected_items = self.game_list.selectedItems()
+        if selected_items:
+            game_name = selected_items[0].text().split(" - ")[0]
+            game_path = self.find_game_path_by_name(game_name)
+            if game_path:
+                goals = self.goal_input.text()
+                self.game_manager.set_game_goals(game_path, goals)
+                self.goal_input.clear()
+                self.refresh_game_list()            
+
+    def display_game_details(self):
+        selected_items = self.game_list.selectedItems()
+        if selected_items:
+            game_name = selected_items[0].text().split(" - ")[0]
+            game_path = self.find_game_path_by_name(game_name)
+            if game_path:
+                game_data = self.game_manager.games[game_path]
+                details = f"Name: {game_data['name']}\nPath: {game_path}\nCompleted: {'Yes' if game_data['completed'] else 'No'}"
+                goals = self.game_manager.games[game_path]['goals']
+                details += f"\nGoals: {goals if goals else 'No goals set'}"
+                self.game_details_label.setText(details) 
+           
+        else:
+            self.game_details_label.setText("Select a game to view details")    
 
     def add_games(self):
         file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", "", 
