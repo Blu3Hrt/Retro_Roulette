@@ -5,6 +5,7 @@ from game_manager import GameManager
 from config import ConfigManager
 from stat_tracker import StatTracker
 from session_manager import SessionManager
+import Python_Client
 
 import os, random, subprocess
 
@@ -262,12 +263,11 @@ class MainWindow(QMainWindow):
         return tab
 
     def launch_bizhawk(self):
-        # Path to the BizHawk executable
-        bizhawk_path = "BizHawk\EmuHawk.exe"  # Update this path
-        try:
-            subprocess.Popen(bizhawk_path)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to launch BizHawk: {e}")
+        # Call the method to execute BizHawk with the Lua script
+        self.execute_bizhawk_script()
+
+        # Additional logic if needed, such as verifying launch success
+        # ...
 
     def start_shuffle(self):
         if not self.is_shuffling:
@@ -299,85 +299,72 @@ class MainWindow(QMainWindow):
 
     def shuffle_games(self):
         if not self.is_shuffling or not self.game_manager.games:
-            self.is_shuffling = False
-            QMessageBox.warning(self, "Shuffle Error", "No games available to shuffle.")
             return
 
         game_paths = list(self.game_manager.games.keys())
         if self.current_game_path:
-            game_paths.remove(self.current_game_path)  # Avoid immediate repeat
+            game_paths.remove(self.current_game_path)  # Avoid repeating the same game
 
-        if not game_paths:  # In case only one game is available
-            game_paths.append(self.current_game_path)
+        if not game_paths:
+            game_paths.append(self.current_game_path)  # If only one game, repeat it
 
         next_game_path = random.choice(game_paths)
-
-        if self.current_game_path:
-            if not self.save_game_state(self.current_game_path):
-                QMessageBox.warning(self, "Save State Error", "Failed to save game state.")
-                return
-
-        if not self.load_game(next_game_path):
-            QMessageBox.warning(self, "Load Game Error", "Failed to load game.")
-            return
-
+        self.save_game_state(self.current_game_path)  # Save current game state
+        self.load_game(next_game_path)  # Load next game
         self.current_game_path = next_game_path
 
-        QTimer.singleShot(self.shuffle_interval, self.shuffle_games)
-
     def save_game_state(self, game_path):
-        # Use scripting or API to save the current state
-        # Placeholder for the actual implementation
-        self.execute_bizhawk_script("save_state", game_path)
+        if not game_path:
+            return
+        state_path = self.get_state_path(game_path)  # Get unique state path for the game
+        Python_Client.save_state(state_path)
 
     def load_game(self, game_path):
-        # Adjust the command as needed for your actual implementation
-        command = ["E:/Coding/Retro_Roulette/BizHawk/EmuHawk.exe", "--action", "load_game", "--game", game_path]
-
-        print(f"Attempting to load game: {game_path}")
-        try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            # Example: Wait for the process to complete and capture output (stdout)
-            stdout, stderr = process.communicate(timeout=15)  # Wait for 15 seconds for BizHawk to respond
-
-            if process.returncode != 0:
-                print(f"Error loading game: {stderr.decode('utf-8')}")
-                return False
-
-            # Example success check based on BizHawk's output
-            if "Game loaded successfully" in stdout.decode('utf-8'):
-                print("Game loaded successfully.")
-                return True
-            else:
-                print("Game did not load successfully.")
-                return False
-        except subprocess.TimeoutExpired as e:
-            print(f"BizHawk load game timeout: {e}")
-            return False
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            return False
+        if not game_path:
+            return
+        Python_Client.load_rom(game_path)
+        state_path = self.get_state_path(game_path)
+        Python_Client.load_state(state_path)
 
     def load_game_state(self, game_path):
-        # Use scripting or API to load the saved state of the new game
-        self.execute_bizhawk_script("load_state", game_path)
+        if not game_path:
+            return
 
-    def execute_bizhawk_script(self, action, game_path):
-        # Example: full path to the script or modify as per your script's location
-        script_path = "E:/Coding/Retro_Roulette/BizHawk/EmuHawk.exe"
-        
-        # Construct the command as a list
-        command = [script_path, "--action", action, "--game", game_path]
+        # Generate the path for the game's save state
+        state_path = self.get_state_path(game_path)
 
-        print("Executing command:", command)  # Debugging print
+        # Use the Python client script to load the game state in BizHawk
+        Python_Client.load_state(state_path)
+
+        # Additional logic if needed, such as updating UI or handling errors
+
+    def execute_bizhawk_script(self):
+        # Get the BizHawk path from the configuration
+        bizhawk_path = self.config.get('bizhawk_path', 'default_bizhawk_path')
+
+        # Path to the Lua script
+        lua_script_path = "Lua/bizhawk_server.lua"
+
+        # Construct the command to launch BizHawk with the Lua script
+        command = [bizhawk_path, "--lua=" + lua_script_path]
 
         try:
             subprocess.Popen(command)
-        except FileNotFoundError as e:
-            print(f"Error executing command: {e}")
-            QMessageBox.critical(self, "Execution Error", f"Failed to execute command: {command}")
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Error", "BizHawk executable not found.")
 
+    def get_state_path(self, game_path):
+        # Extract a unique identifier for the game from the game path
+        game_id = os.path.basename(game_path).split('.')[0]
 
+        # Assume you have a way to get the current session ID
+        session_id = self.get_current_session_id()
+
+        # Construct the save state path
+        state_path = f"save_states/{session_id}/{game_id}.state"
+        return state_path
+    
+    
 
 
     def create_configuration_tab(self):
