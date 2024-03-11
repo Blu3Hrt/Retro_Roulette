@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QComboBox
 from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
+from stat_tracker import StatTracker
 import os, random, subprocess
 
 class MainWindow(QMainWindow):
@@ -15,14 +16,17 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget(self)
         self.setCentralWidget(self.tab_widget)
 
-        # Initialize tabs
-        self.init_tabs()
-
-        self.game_manager = GameManager()
-        self.refresh_game_list()
-        
+        self.game_manager = GameManager()      
         self.config_manager = ConfigManager()
-        self.load_configuration()        
+        self.stat_tracker = StatTracker()        
+        # Initialize tabs
+        self.init_tabs()  
+        self.refresh_game_list()          
+        self.load_configuration() 
+        
+     
+        
+                      
 
     def init_tabs(self):
         # Create tabs for different functionalities
@@ -262,7 +266,14 @@ class MainWindow(QMainWindow):
 
     def start_shuffle(self):
         self.is_shuffling = True
+        self.shuffle_interval = self.determine_shuffle_interval()
         self.shuffle_games()
+
+    def determine_shuffle_interval(self):
+        # Placeholder: Determine the shuffle interval based on configuration
+        min_interval = self.config_manager.config.get('min_shuffle_interval', 30)
+        max_interval = self.config_manager.config.get('max_shuffle_interval', 60)
+        return random.randint(min_interval, max_interval) * 1000  # in milliseconds
 
     def pause_shuffle(self):
         self.is_shuffling = False
@@ -275,18 +286,32 @@ class MainWindow(QMainWindow):
         # Logic to resume the game/shuffle
 
     def shuffle_games(self):
-        if not self.is_shuffling:
+        if not self.is_shuffling or not self.game_manager.games:
+            self.is_shuffling = False
+            QMessageBox.warning(self, "Shuffle Error", "No games available to shuffle.")
             return
 
         game_paths = list(self.game_manager.games.keys())
+        if self.current_game_path:
+            game_paths.remove(self.current_game_path)  # Avoid immediate repeat
+
+        if not game_paths:  # In case only one game is available
+            game_paths.append(self.current_game_path)
+
         next_game_path = random.choice(game_paths)
 
         if self.current_game_path:
-            self.save_game_state(self.current_game_path)
+            if not self.save_game_state(self.current_game_path):
+                QMessageBox.warning(self, "Save State Error", "Failed to save game state.")
+                return
+
+        if not self.load_game(next_game_path):
+            QMessageBox.warning(self, "Load Game Error", "Failed to load game.")
+            return
 
         self.current_game_path = next_game_path
-        self.load_game(next_game_path)
-        QTimer.singleShot(1000, lambda: self.load_game_state(next_game_path))  # Delay to ensure smooth transition
+
+        QTimer.singleShot(self.shuffle_interval, self.shuffle_games)
 
     def save_game_state(self, game_path):
         # Use scripting or API to save the current state
@@ -294,18 +319,51 @@ class MainWindow(QMainWindow):
         self.execute_bizhawk_script("save_state", game_path)
 
     def load_game(self, game_path):
-        # Use scripting or API to load the new game
-        self.execute_bizhawk_script("load_game", game_path)
+        # Adjust the command as needed for your actual implementation
+        command = ["E:/Coding/Retro_Roulette/BizHawk/EmuHawk.exe", "--action", "load_game", "--game", game_path]
+
+        print(f"Attempting to load game: {game_path}")
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Example: Wait for the process to complete and capture output (stdout)
+            stdout, stderr = process.communicate(timeout=15)  # Wait for 15 seconds for BizHawk to respond
+
+            if process.returncode != 0:
+                print(f"Error loading game: {stderr.decode('utf-8')}")
+                return False
+
+            # Example success check based on BizHawk's output
+            if "Game loaded successfully" in stdout.decode('utf-8'):
+                print("Game loaded successfully.")
+                return True
+            else:
+                print("Game did not load successfully.")
+                return False
+        except subprocess.TimeoutExpired as e:
+            print(f"BizHawk load game timeout: {e}")
+            return False
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return False
 
     def load_game_state(self, game_path):
         # Use scripting or API to load the saved state of the new game
         self.execute_bizhawk_script("load_state", game_path)
 
     def execute_bizhawk_script(self, action, game_path):
-        # Execute a script or API call to BizHawk
-        # Replace with the actual method of communication with BizHawk
-        command = f"bizhawk_script --action {action} --game \"{game_path}\""
-        subprocess.Popen(command)
+        # Example: full path to the script or modify as per your script's location
+        script_path = "E:/Coding/Retro_Roulette/BizHawk/EmuHawk.exe"
+        
+        # Construct the command as a list
+        command = [script_path, "--action", action, "--game", game_path]
+
+        print("Executing command:", command)  # Debugging print
+
+        try:
+            subprocess.Popen(command)
+        except FileNotFoundError as e:
+            print(f"Error executing command: {e}")
+            QMessageBox.critical(self, "Execution Error", f"Failed to execute command: {command}")
 
 
 
@@ -347,7 +405,20 @@ class MainWindow(QMainWindow):
         min_interval = self.min_shuffle_interval_input.text()
         max_interval = self.max_shuffle_interval_input.text()
 
-        # Perform validation (not shown here)
+        # Basic validation
+        if not os.path.exists(bizhawk_path):
+            QMessageBox.warning(self, "Invalid Path", "The BizHawk path is not valid.")
+            return
+
+        try:
+            min_interval = int(min_interval)
+            max_interval = int(max_interval)
+            if min_interval <= 0 or max_interval <= 0 or min_interval > max_interval:
+                raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Interval", "Shuffle intervals must be positive integers, with min <= max.")
+            return
+
         new_config = {
             'bizhawk_path': bizhawk_path,
             'min_shuffle_interval': min_interval,
@@ -365,14 +436,52 @@ class MainWindow(QMainWindow):
 
 
 
-
-
+    
     def create_stats_tab(self):
-        # Placeholder for Stats tab content
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        # Add widgets to layout here...
+
+        # Dropdown to select a specific game's stats
+        self.game_stats_dropdown = QComboBox()
+        self.game_stats_dropdown.addItem("All Games")
+        self.game_stats_dropdown.addItems(self.game_manager.games.keys())
+        self.game_stats_dropdown.currentTextChanged.connect(self.update_stats_display)
+        layout.addWidget(self.game_stats_dropdown)
+
+        # Label for stats display
+        self.stats_label = QLabel("Select a game to view detailed stats")
+        layout.addWidget(self.stats_label)
+
+        # Button to update stats display
+        update_stats_button = QPushButton("Update Stats")
+        update_stats_button.clicked.connect(self.update_stats_display)
+        layout.addWidget(update_stats_button)
+
+        # Button to export stats
+        export_stats_button = QPushButton("Export Stats")
+        export_stats_button.clicked.connect(self.export_stats)
+        layout.addWidget(export_stats_button)
+
         return tab
+
+    def update_stats_display(self, selected_game=None):
+        selected_game = self.game_stats_dropdown.currentText()
+        total_time, total_swaps, detailed_stats = self.stat_tracker.get_stats()
+
+        if selected_game and selected_game != "All Games":
+            game_stats = detailed_stats.get(selected_game, {})
+            stats_text = f"Stats for {selected_game}:\nTotal Time: {game_stats.get('total_time', 0)} seconds"
+        else:
+            stats_text = f"Total Time: {total_time} seconds\nTotal Swaps: {total_swaps}\nGame Times: {detailed_stats}"
+
+        self.stats_label.setText(stats_text)
+
+    def export_stats(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Export Stats", "", "JSON Files (*.json)")
+        if file_path:
+            self.stat_tracker.export_stats(file_path)
+            QMessageBox.information(self, "Export", "Stats exported successfully")
+    
 
 
 
