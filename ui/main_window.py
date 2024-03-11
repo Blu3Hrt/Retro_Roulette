@@ -353,6 +353,7 @@ class MainWindow(QMainWindow):
             Python_Client.load_state(state_path)  # Load the game state
         else:
             print(f"No save state found for {game_path}. Starting new game.")
+            self.save_game_state(game_path)  # Save a new state for the game
 
     def execute_bizhawk_script(self):
         # Get the BizHawk path from the configuration

@@ -57,9 +57,7 @@ end
 
 function loadROM(romPath)
     print("Loading ROM:", romPath)
-    client.openrom(romPath)  -- Load ROM using BizHawk's functions
-    emu.frameadvance()       -- Advance a frame to allow ROM to load
-    emu.frameadvance()       -- Additional frame advance for DS ROMs
+    client.openrom(romPath)
 end
 
 function loadState(statePath)
