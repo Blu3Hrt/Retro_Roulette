@@ -25,9 +25,7 @@ class MainWindow(QMainWindow):
         self.config = self.config_manager.load_config()              
         # Initialize tabs
         self.init_tabs()  
-        self.refresh_game_list()          
-        self.load_config()
-
+        self.refresh_game_list()    
         
      
         
@@ -392,16 +390,16 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.bizhawk_path_input)
         layout.addWidget(browse_bizhawk_button)
 
-        # Label and input for minimum shuffle interval
-        layout.addWidget(QLabel("Minimum Shuffle Interval (seconds):"))
+        # Min Interval Input
         self.min_interval_input = QLineEdit()
-        self.min_interval_input.setPlaceholderText("Enter minimum interval")
+        min_interval = self.config.get('min_shuffle_interval', '30')  # Default value if not set
+        self.min_interval_input.setText(str(min_interval))
         layout.addWidget(self.min_interval_input)
 
-        # Label and input for maximum shuffle interval
-        layout.addWidget(QLabel("Maximum Shuffle Interval (seconds):"))
+        # Max Interval Input
         self.max_interval_input = QLineEdit()
-        self.max_interval_input.setPlaceholderText("Enter maximum interval")
+        max_interval = self.config.get('max_shuffle_interval', '60')  # Default value if not set
+        self.max_interval_input.setText(str(max_interval))
         layout.addWidget(self.max_interval_input)
 
         # Save Configuration Button
