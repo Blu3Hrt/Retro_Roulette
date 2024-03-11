@@ -486,7 +486,16 @@ class MainWindow(QMainWindow):
 
         # Save the configuration using ConfigManager
         self.config_manager.save_config(config_data)
-        QMessageBox.information(self, "Success", "Configuration saved successfully.")               
+        QMessageBox.information(self, "Success", "Configuration saved successfully.") 
+
+    def refresh_game_list(self):
+        # Assuming you have a QListWidget or similar for displaying the game list
+        self.game_list.clear()  # Clear the current list
+
+        for game_path, game_info in self.game_manager.games.items():
+            # Example of how you might format each game's display text
+            display_text = f"{game_info['name']} - Completed: {'Yes' if game_info['completed'] else 'No'}"
+            self.game_list.addItem(display_text)                      
 
     def load_config(self):
         # Load configurations using ConfigManager
@@ -497,6 +506,7 @@ class MainWindow(QMainWindow):
         session_data = self.session_manager.load_session(selected_session)
         if session_data:
             self.game_manager.load_games(session_data['games'])
+            self.refresh_game_list()            
             self.stat_tracker.load_stats(session_data['stats'])
             # Assuming you have methods to handle the loading of games and stats
             # You would also handle the restoration of save states here

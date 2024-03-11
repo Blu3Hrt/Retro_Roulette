@@ -8,12 +8,7 @@ class GameManager:
 
     def load_games(self, game_data):
 
-        self.games = game_data                
-        try:
-            with open(self.file_path, 'r') as file:
-                return json.load(file)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return {}
+        self.games = game_data 
         
 
     def save_games(self):
