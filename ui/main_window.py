@@ -289,29 +289,44 @@ class MainWindow(QMainWindow):
 
     def pause_shuffle(self):
         self.is_shuffling = False
-        # Logic to pause the game/shuffle
+        # Additional logic to handle pause state
 
     def resume_shuffle(self):
-        if not self.current_game_path:
-            return
-        self.is_shuffling = True
-        # Logic to resume the game/shuffle
+        if not self.is_shuffling and self.game_manager.games:
+            self.is_shuffling = True
+            self.shuffle_games()
 
     def shuffle_games(self):
+        # Check if shuffling is active and if there are games available
         if not self.is_shuffling or not self.game_manager.games:
             return
 
         game_paths = list(self.game_manager.games.keys())
-        if self.current_game_path:
-            game_paths.remove(self.current_game_path)  # Avoid repeating the same game
 
-        if not game_paths:
-            game_paths.append(self.current_game_path)  # If only one game, repeat it
+        # Avoid repeating the same game immediately
+        if self.current_game_path and len(game_paths) > 1:
+            game_paths.remove(self.current_game_path)
 
+        # Select a random game from the available paths
         next_game_path = random.choice(game_paths)
-        self.save_game_state(self.current_game_path)  # Save current game state
-        self.load_game(next_game_path)  # Load next game
+
+        # Save the state of the current game before loading the next one
+        if self.current_game_path:
+            self.save_game_state(self.current_game_path)
+
+        # Load the next game and its state
+        self.load_game(next_game_path)
+        self.load_game_state(next_game_path)
+
+        # Update the current game path
         self.current_game_path = next_game_path
+
+        # Get user-configured shuffle intervals
+        min_interval = self.config.get('min_shuffle_interval', 30)  # Default to 30 seconds
+        max_interval = self.config.get('max_shuffle_interval', 60)  # Default to 60 seconds
+
+        shuffle_interval = random.randint(min_interval, max_interval)
+        QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)     
 
     def save_game_state(self, game_path):
         if not game_path:
@@ -322,21 +337,16 @@ class MainWindow(QMainWindow):
     def load_game(self, game_path):
         if not game_path:
             return
+        # Call to Python client script to load the game
         Python_Client.load_rom(game_path)
-        state_path = self.get_state_path(game_path)
-        Python_Client.load_state(state_path)
 
     def load_game_state(self, game_path):
-        if not game_path:
-            return
-
-        # Generate the path for the game's save state
         state_path = self.get_state_path(game_path)
-
-        # Use the Python client script to load the game state in BizHawk
-        Python_Client.load_state(state_path)
-
-        # Additional logic if needed, such as updating UI or handling errors
+        if os.path.exists(state_path):
+            # Call to Python client script to load the state
+            Python_Client.load_state(state_path)
+        else:
+            print(f"No save state found for {game_path}. Starting new game.")
 
     def execute_bizhawk_script(self):
         # Get the BizHawk path from the configuration
@@ -354,14 +364,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "BizHawk executable not found.")
 
     def get_state_path(self, game_path):
-        # Extract a unique identifier for the game from the game path
         game_id = os.path.basename(game_path).split('.')[0]
 
-        # Assume you have a way to get the current session ID
-        session_id = self.get_current_session_id()
+        # Use the current session's unique name as the session identifier
+        session_name = self.current_session_name
 
-        # Construct the save state path
-        state_path = f"save_states/{session_id}/{game_id}.state"
+        state_path = f"save_states/{session_name}/{game_id}.state"
         return state_path
     
     
@@ -492,6 +500,7 @@ class MainWindow(QMainWindow):
         selected_session = self.session_dropdown.currentText()
         session_data = self.session_manager.load_session(selected_session)
         if session_data:
+            self.current_session_name = selected_session            
             self.game_manager.load_games(session_data['games'])
             self.refresh_game_list()            
             self.stat_tracker.load_stats(session_data['stats'])

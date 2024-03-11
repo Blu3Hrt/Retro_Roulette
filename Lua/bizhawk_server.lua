@@ -42,13 +42,31 @@ function loadROM(romPath)
 end
 
 function saveState(statePath)
-    print("Saving state:", statePath)
-    savestate.save(statePath)
+    if not fileExists(statePath) then
+        -- Create a new save state if it doesn't exist
+        savestate.save(statePath)
+    end
+    print("State saved:", statePath)
 end
 
 function loadState(statePath)
-    print("Loading state:", statePath)
-    savestate.load(statePath)
+    if not fileExists(statePath) then
+        print("Error: State not found -", statePath)
+        -- Send error response to Python, if necessary
+        return
+    end
+    local success, err = pcall(function() savestate.load(statePath) end)
+    if not success then
+        print("Error loading state:", err)
+        -- Handle the error, like sending a response back to Python
+    else
+        print("State loaded successfully:", statePath)
+    end
+end
+
+function fileExists(name)
+    local f = io.open(name, "r")
+    if f ~= nil then io.close(f) return true else return false end
 end
 
 while true do
