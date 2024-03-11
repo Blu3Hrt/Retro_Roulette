@@ -21,6 +21,18 @@ function acceptConnection()
     end
 end
 
+function handleCommand(fullCommand)
+    local command, path = fullCommand:match("^(%S+) (.+)$")
+    if command == "loadrom" then
+        loadROM(path)
+    elseif command == "savestate" then
+        saveState(path)
+    elseif command == "loadstate" then
+        loadState(path)
+    end
+    -- other commands...
+end
+
 function receiveCommand()
     if connectionSocket then
         local command, err = connectionSocket:receive('*l')  -- Receive one line, handle light userdata issue
@@ -71,20 +83,12 @@ end
 
 while true do
     acceptConnection()
-    local command = receiveCommand()
-    if command then
-        -- Existing load ROM command
-        if command:sub(1, 8) == "loadrom " then
-            local romPath = command:sub(9)
-            loadROM(romPath)
-        -- Additions for save/load state
-        elseif command:sub(1, 9) == "savestate " then
-            local statePath = command:sub(10)
-            saveState(statePath)
-        elseif command:sub(1, 10) == "loadstate " then
-            local statePath = command:sub(11)
-            loadState(statePath)
-        end
+
+    -- Receive a command
+    local receivedCommand = receiveCommand()
+
+    if receivedCommand then
+        handleCommand(receivedCommand)
     end
     emu.frameadvance() -- Keep BizHawk responsive
 end

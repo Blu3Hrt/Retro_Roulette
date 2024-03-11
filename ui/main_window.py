@@ -328,11 +328,17 @@ class MainWindow(QMainWindow):
         shuffle_interval = random.randint(min_interval, max_interval)
         QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)     
 
+    def ensure_directory_exists(self, state_path):
+        directory = os.path.dirname(state_path)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
     def save_game_state(self, game_path):
         if not game_path:
             return
-        state_path = self.get_state_path(game_path)  # Get unique state path for the game
-        Python_Client.save_state(state_path)
+        state_path = self.get_state_path(game_path)
+        self.ensure_directory_exists(state_path)  # Ensure the directory exists
+        Python_Client.save_state(state_path)  # Save the game state
 
     def load_game(self, game_path):
         if not game_path:
@@ -342,9 +348,9 @@ class MainWindow(QMainWindow):
 
     def load_game_state(self, game_path):
         state_path = self.get_state_path(game_path)
+        self.ensure_directory_exists(state_path)  # Ensure the directory exists
         if os.path.exists(state_path):
-            # Call to Python client script to load the state
-            Python_Client.load_state(state_path)
+            Python_Client.load_state(state_path)  # Load the game state
         else:
             print(f"No save state found for {game_path}. Starting new game.")
 
