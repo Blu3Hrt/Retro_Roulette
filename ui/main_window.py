@@ -25,7 +25,8 @@ class MainWindow(QMainWindow):
         self.config = self.config_manager.load_config()              
         # Initialize tabs
         self.init_tabs()  
-        self.refresh_game_list()    
+        self.refresh_game_list()
+        self.update_session_info()            
         
      
         
@@ -38,6 +39,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.create_configuration_tab(), "Configuration")
         self.tab_widget.addTab(self.create_stats_tab(), "Stats")
         self.tab_widget.addTab(self.create_twitch_integration_tab(), "Twitch Integration")
+
 
 
 
@@ -407,20 +409,35 @@ class MainWindow(QMainWindow):
         save_config_button.clicked.connect(self.save_configuration)
         layout.addWidget(save_config_button)        
 
-        # Dropdown to select a session to load
+        # Dropdown to select a session
         self.session_dropdown = QComboBox()
         self.session_dropdown.addItems(self.session_manager.get_saved_sessions())
         layout.addWidget(self.session_dropdown)
 
+        self.session_info_label = QLabel("Select a session to view details")
+        layout.addWidget(self.session_info_label)
+
+        self.session_dropdown.currentIndexChanged.connect(self.update_session_info)        
+
+        # Save Session Button
+        save_session_button = QPushButton("Save Current Session")
+        save_session_button.clicked.connect(self.save_current_session)
+        layout.addWidget(save_session_button) 
+        
         # Load Session Button
         load_session_button = QPushButton("Load Session")
         load_session_button.clicked.connect(self.load_selected_session)
         layout.addWidget(load_session_button)
 
-        # Save Session Button
-        save_session_button = QPushButton("Save Current Session")
-        save_session_button.clicked.connect(self.save_current_session)
-        layout.addWidget(save_session_button)       
+        # Button for renaming the selected session
+        rename_session_button = QPushButton("Rename Selected Session")
+        rename_session_button.clicked.connect(self.rename_selected_session)
+        layout.addWidget(rename_session_button)
+        
+        # Button to delete the selected session
+        delete_session_button = QPushButton("Delete Selected Session")
+        delete_session_button.clicked.connect(self.delete_selected_session)
+        layout.addWidget(delete_session_button)      
 
         return tab
 
@@ -429,7 +446,16 @@ class MainWindow(QMainWindow):
         if path:
             self.bizhawk_path_input.setText(path)
 
-
+    def delete_selected_session(self):
+        selected_session = self.session_dropdown.currentText()
+        if selected_session:
+            if self.session_manager.delete_session(selected_session):
+                QMessageBox.information(self, "Session Deleted", f"Session '{selected_session}' deleted successfully.")
+                self.session_dropdown.removeItem(self.session_dropdown.currentIndex())
+            else:
+                QMessageBox.warning(self, "Delete Error", "Could not delete the selected session.")
+        else:
+            QMessageBox.warning(self, "No Selection", "No session selected for deletion.")
 
     def save_configuration(self):
         # Collect configuration data from UI elements
@@ -487,6 +513,23 @@ class MainWindow(QMainWindow):
             self.session_manager.save_session(session_name, games, stats, save_states)
             QMessageBox.information(self, "Session", f"Session '{session_name}' saved successfully")
             self.session_dropdown.addItem(session_name)    
+            
+    def rename_selected_session(self):
+        selected_session = self.session_dropdown.currentText()
+        if selected_session:
+            new_name, ok = QInputDialog.getText(self, "Rename Session", "Enter new name for the session:")
+            if ok and new_name:
+                success = self.session_manager.rename_session(selected_session, new_name)
+                if success:
+                    self.update_session_dropdown()  # Update the session list
+                    QMessageBox.information(self, "Renamed", f"'{selected_session}' renamed to '{new_name}'.")
+                else:
+                    QMessageBox.warning(self, "Rename Error", "Could not rename the selected session.")
+                    
+    def update_session_info(self):
+        selected_session = self.session_dropdown.currentText()
+        session_info = self.session_manager.get_session_info(selected_session)
+        self.session_info_label.setText(session_info)                    
             
     def apply_new_config(self):
         # Extract and validate interval settings
