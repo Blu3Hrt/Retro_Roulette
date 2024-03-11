@@ -14,7 +14,6 @@ class GameManager:
     def save_games(self):
         with open(self.file_path, 'w') as file:
             json.dump(self.games, file, indent=4)
-            print("Games saved")
 
     def add_game(self, path, name=None, goals=None):
         normalized_path = os.path.abspath(path)

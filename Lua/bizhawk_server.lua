@@ -35,7 +35,7 @@ end
 
 function receiveCommand()
     if connectionSocket then
-        local command, err = connectionSocket:receive('*l')  -- Receive one line, handle light userdata issue
+        local command, err = connectionSocket:receive('*l')  -- Receive one line
         if command then
             print("Received command:", command)
             return command
@@ -43,36 +43,45 @@ function receiveCommand()
             print("Error receiving command:", err)
             connectionSocket:close()
             connectionSocket = nil
+            -- Reattempt connection
+            connectionSocket = bizhawkSocket:accept()
+            if connectionSocket then
+                connectionSocket:settimeout(0)  -- Non-blocking receive
+                print("Client reconnected")
+            end
         end
     end
     return nil
 end
 
+
 function loadROM(romPath)
     print("Loading ROM:", romPath)
-    client.openrom(romPath) -- Load ROM using BizHawk's functions
-end
-
-function saveState(statePath)
-    if not fileExists(statePath) then
-        -- Create a new save state if it doesn't exist
-        savestate.save(statePath)
-    end
-    print("State saved:", statePath)
+    client.openrom(romPath)  -- Load ROM using BizHawk's functions
+    emu.frameadvance()       -- Advance a frame to allow ROM to load
+    emu.frameadvance()       -- Additional frame advance for DS ROMs
 end
 
 function loadState(statePath)
-    if not fileExists(statePath) then
-        print("Error: State not found -", statePath)
-        -- Send error response to Python, if necessary
-        return
-    end
-    local success, err = pcall(function() savestate.load(statePath) end)
-    if not success then
-        print("Error loading state:", err)
-        -- Handle the error, like sending a response back to Python
+    print("Attempting to load state:", statePath)
+    if fileExists(statePath) then
+        local success, err = pcall(function() savestate.load(statePath) end)
+        if success then
+            print("State loaded successfully:", statePath)
+        else
+            print("Error loading state:", err)
+        end
     else
-        print("State loaded successfully:", statePath)
+        print("State file not found:", statePath)
+    end
+end
+
+function saveState(statePath)
+    local success, err = pcall(function() savestate.save(statePath) end)
+    if success then
+        print("State saved successfully:", statePath)
+    else
+        print("Error saving state:", err)
     end
 end
 
