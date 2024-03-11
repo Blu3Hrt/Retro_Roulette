@@ -44,3 +44,5 @@ __pycache__/
 venv/
 Games/
 BizHawk/
+session.json
+sessions/Test.json

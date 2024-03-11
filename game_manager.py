@@ -4,14 +4,17 @@ import os
 class GameManager:
     def __init__(self, file_path='games.json'):
         self.file_path = file_path
-        self.games = self.load_games()
+        self.games = {}
 
-    def load_games(self):
+    def load_games(self, game_data):
+
+        self.games = game_data                
         try:
             with open(self.file_path, 'r') as file:
                 return json.load(file)
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
+        
 
     def save_games(self):
         with open(self.file_path, 'w') as file:
@@ -49,3 +52,11 @@ class GameManager:
         if path in self.games:
             self.games[path]['name'] = new_name
             self.save_games()
+            
+    def load_save_states(self, save_states_data):
+        # Implement based on how your application should handle save states
+        self.save_states = save_states_data            
+
+    def get_current_games(self):
+        # Assuming 'games' is a dictionary of game data keyed by something like file paths
+        return self.games

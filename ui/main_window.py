@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
 from stat_tracker import StatTracker
+from session_manager import SessionManager
+
 import os, random, subprocess
 
 class MainWindow(QMainWindow):
@@ -16,13 +18,16 @@ class MainWindow(QMainWindow):
         self.tab_widget = QTabWidget(self)
         self.setCentralWidget(self.tab_widget)
 
-        self.game_manager = GameManager()      
+        self.game_manager = GameManager()
         self.config_manager = ConfigManager()
-        self.stat_tracker = StatTracker()        
+        self.stat_tracker = StatTracker() 
+        self.session_manager = SessionManager() 
+        self.config = self.config_manager.load_config()              
         # Initialize tabs
         self.init_tabs()  
         self.refresh_game_list()          
-        self.load_configuration() 
+        self.load_config()
+
         
      
         
@@ -265,9 +270,16 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to launch BizHawk: {e}")
 
     def start_shuffle(self):
-        self.is_shuffling = True
-        self.shuffle_interval = self.determine_shuffle_interval()
-        self.shuffle_games()
+        if not self.is_shuffling:
+            # Read shuffle interval configurations
+            min_interval = self.config.get('min_shuffle_interval', 30)
+            max_interval = self.config.get('max_shuffle_interval', 60)
+            
+            # Convert to milliseconds and ensure min_interval is not greater than max_interval
+            self.shuffle_interval = random.randint(min(min_interval, max_interval), max(max_interval, min_interval)) * 1000
+            
+            self.is_shuffling = True
+            self.shuffle_games()
 
     def determine_shuffle_interval(self):
         # Placeholder: Determine the shuffle interval based on configuration
@@ -374,24 +386,43 @@ class MainWindow(QMainWindow):
 
         # BizHawk Path Configuration
         self.bizhawk_path_input = QLineEdit()
-        self.bizhawk_path_input.setPlaceholderText("Path to BizHawk executable")
+        self.bizhawk_path_input.setText(self.config.get('bizhawk_path', ''))
         browse_bizhawk_button = QPushButton("Browse")
         browse_bizhawk_button.clicked.connect(self.browse_bizhawk_path)
         layout.addWidget(self.bizhawk_path_input)
         layout.addWidget(browse_bizhawk_button)
 
-        # Shuffle Interval Configuration
-        self.min_shuffle_interval_input = QLineEdit()
-        self.min_shuffle_interval_input.setPlaceholderText("Minimum Shuffle Interval (seconds)")
-        self.max_shuffle_interval_input = QLineEdit()
-        self.max_shuffle_interval_input.setPlaceholderText("Maximum Shuffle Interval (seconds)")
-        layout.addWidget(self.min_shuffle_interval_input)
-        layout.addWidget(self.max_shuffle_interval_input)
+        # Label and input for minimum shuffle interval
+        layout.addWidget(QLabel("Minimum Shuffle Interval (seconds):"))
+        self.min_interval_input = QLineEdit()
+        self.min_interval_input.setPlaceholderText("Enter minimum interval")
+        layout.addWidget(self.min_interval_input)
+
+        # Label and input for maximum shuffle interval
+        layout.addWidget(QLabel("Maximum Shuffle Interval (seconds):"))
+        self.max_interval_input = QLineEdit()
+        self.max_interval_input.setPlaceholderText("Enter maximum interval")
+        layout.addWidget(self.max_interval_input)
 
         # Save Configuration Button
         save_config_button = QPushButton("Save Configuration")
         save_config_button.clicked.connect(self.save_configuration)
-        layout.addWidget(save_config_button)
+        layout.addWidget(save_config_button)        
+
+        # Dropdown to select a session to load
+        self.session_dropdown = QComboBox()
+        self.session_dropdown.addItems(self.session_manager.get_saved_sessions())
+        layout.addWidget(self.session_dropdown)
+
+        # Load Session Button
+        load_session_button = QPushButton("Load Session")
+        load_session_button.clicked.connect(self.load_selected_session)
+        layout.addWidget(load_session_button)
+
+        # Save Session Button
+        save_session_button = QPushButton("Save Current Session")
+        save_session_button.clicked.connect(self.save_current_session)
+        layout.addWidget(save_session_button)       
 
         return tab
 
@@ -400,39 +431,100 @@ class MainWindow(QMainWindow):
         if path:
             self.bizhawk_path_input.setText(path)
 
-    def save_configuration(self):
-        bizhawk_path = self.bizhawk_path_input.text()
-        min_interval = self.min_shuffle_interval_input.text()
-        max_interval = self.max_shuffle_interval_input.text()
 
-        # Basic validation
-        if not os.path.exists(bizhawk_path):
-            QMessageBox.warning(self, "Invalid Path", "The BizHawk path is not valid.")
+
+    def save_configuration(self):
+        # Collect configuration data from UI elements
+        bizhawk_path = self.bizhawk_path_input.text()
+        min_interval = self.min_interval_input.text()
+        max_interval = self.max_interval_input.text()
+
+        # Validate and prepare the configuration data
+        valid_intervals, message = self.validate_intervals(min_interval, max_interval)
+        if not valid_intervals:
+            QMessageBox.warning(self, "Invalid Input", message)
             return
 
         try:
+            # Ensure intervals are integers
             min_interval = int(min_interval)
             max_interval = int(max_interval)
-            if min_interval <= 0 or max_interval <= 0 or min_interval > max_interval:
-                raise ValueError
         except ValueError:
-            QMessageBox.warning(self, "Invalid Interval", "Shuffle intervals must be positive integers, with min <= max.")
+            QMessageBox.warning(self, "Invalid Input", "Intervals must be numeric.")
             return
 
-        new_config = {
+        # Compile configuration data
+        config_data = {
             'bizhawk_path': bizhawk_path,
             'min_shuffle_interval': min_interval,
             'max_shuffle_interval': max_interval
         }
 
-        self.config_manager.save_config(new_config)
-        QMessageBox.information(self, "Configuration", "Configuration saved successfully")
+        # Save the configuration using ConfigManager
+        self.config_manager.save_config(config_data)
+        QMessageBox.information(self, "Success", "Configuration saved successfully.")               
 
-    def load_configuration(self):
-        config = self.config_manager.config
-        self.bizhawk_path_input.setText(config.get('bizhawk_path', ''))
-        self.min_shuffle_interval_input.setText(str(config.get('min_shuffle_interval', '')))
-        self.max_shuffle_interval_input.setText(str(config.get('max_shuffle_interval', '')))
+    def load_config(self):
+        # Load configurations using ConfigManager
+        self.config = self.config_manager.load_config()
+        
+    def load_selected_session(self):
+        selected_session = self.session_dropdown.currentText()
+        session_data = self.session_manager.load_session(selected_session)
+        if session_data:
+            self.game_manager.load_games(session_data['games'])
+            self.stat_tracker.load_stats(session_data['stats'])
+            # Assuming you have methods to handle the loading of games and stats
+            # You would also handle the restoration of save states here
+            QMessageBox.information(self, "Session Loaded", f"Session '{selected_session}' has been loaded successfully.")
+        else:
+            QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
+
+    def save_current_session(self):
+        session_name, ok = QInputDialog.getText(self, "Save Session", "Enter a name for the session:")
+        if ok and session_name:
+            games = self.game_manager.games  # If this is how you access the current games
+            stats = self.stat_tracker.get_stats()
+            save_states = {}  # Placeholder for save states logic
+            self.session_manager.save_session(session_name, games, stats, save_states)
+            QMessageBox.information(self, "Session", f"Session '{session_name}' saved successfully")
+            self.session_dropdown.addItem(session_name)    
+            
+    def apply_new_config(self):
+        # Extract and validate interval settings
+        new_min_interval = self.min_interval_input.text()
+        new_max_interval = self.max_interval_input.text()
+        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
+
+        # Validate and save the new configuration
+        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
+        if valid:
+            self.config_manager.save_config({'min_shuffle_interval': int(new_min_interval),
+                                             'max_shuffle_interval': int(new_max_interval)})
+            self.load_config()  # Reload configuration to apply changes
+            QMessageBox.information(self, "Success", "Configuration updated successfully.")
+        else:
+            QMessageBox.warning(self, "Invalid Input", message)
+            
+    def validate_intervals(self, min_interval, max_interval):
+        # Try converting intervals to integers and validate
+        try:
+            min_interval = int(min_interval)
+            max_interval = int(max_interval)
+
+            if min_interval <= 0 or max_interval <= 0:
+                return False, "Intervals must be positive numbers."
+
+            if min_interval > max_interval:
+                return False, "Minimum interval cannot be greater than maximum interval."
+
+            return True, "Valid intervals."
+        
+        except ValueError:
+            # Raised if conversion to int fails
+            return False, "Intervals must be numeric."                            
+
+
 
 
 

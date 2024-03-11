@@ -32,3 +32,17 @@ class StatTracker:
         }
         with open(file_path, 'w') as file:
             json.dump(stats, file, indent=4)
+
+    def load_stats(self, stats_data):
+        if isinstance(stats_data, list) and len(stats_data) == 3:
+            # Assuming the list structure is always: [total_time, total_swaps, game_times]
+            self.total_time = stats_data[0]
+            self.total_swaps = stats_data[1]
+            self.game_times = stats_data[2]
+        else:
+            # Log an error or handle the unexpected format
+            print("Stats data is not in the expected format:", stats_data)
+            # Reset to defaults or handle appropriately
+            self.total_time = 0
+            self.total_swaps = 0
+            self.game_times = {}
