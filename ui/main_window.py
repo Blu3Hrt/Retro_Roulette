@@ -6,7 +6,7 @@ from config import ConfigManager
 from session_manager import SessionManager
 import Python_Client
 
-import os, random, subprocess
+import os, random, subprocess, time
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -22,6 +22,7 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()
         self.session_manager = SessionManager() 
         self.config = self.config_manager.load_config()              
+        self.current_session_name = 'Default Session'  # Initialize with None or a default session name
         # Initialize tabs
         self.init_tabs()  
         self.refresh_game_list()
@@ -510,7 +511,7 @@ class MainWindow(QMainWindow):
         selected_session = self.session_dropdown.currentText()
         session_data = self.session_manager.load_session(selected_session)
         if session_data:
-            self.current_session_name = selected_session            
+            self.current_session_name = selected_session  # Set the current session name here           
             self.game_manager.load_games(session_data['games'])
             self.refresh_game_list()         
             # You would also handle the restoration of save states here
@@ -526,7 +527,8 @@ class MainWindow(QMainWindow):
             stats = self.game_manager.stats_tracker.get_stats()  # or however you access the stats
             self.session_manager.save_session(session_name, games, stats, save_states)
             QMessageBox.information(self, "Session", f"Session '{session_name}' saved successfully")
-            self.session_dropdown.addItem(session_name)    
+            self.current_session_name = session_name  # Set the current session name here
+            self.session_dropdown.addItem(session_name)  # Update the dropdown  
             
     def rename_selected_session(self):
         selected_session = self.session_dropdown.currentText()
@@ -597,20 +599,42 @@ class MainWindow(QMainWindow):
         return tab
 
     def update_stats_display(self):
-        # In main_window.py
-        current_game = self.game_manager.current_game
-        game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
+        game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
 
+        # Calculate the real-time total shuffling time
+        real_time_total = total_shuffling_time
+        if self.game_manager.current_game:
+            # If a game is currently active, add the time elapsed since the last recorded start time
+            elapsed_time = time.time() - self.game_manager.stats_tracker.start_time
+            real_time_total += elapsed_time
+
+        # Update the total stats labels
         self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
-        self.total_time_label.setText(f"Total Time: {self.game_manager.stats_tracker.format_time(total_time)}")
+        self.total_time_label.setText(f"Total Time: {self.format_time(real_time_total)}")
 
+        # Check if there's a current game and update its stats
+        current_game = self.game_manager.current_game
         if current_game and current_game in game_stats:
+            # If a game is currently active, retrieve and display its stats
             current_game_stats = game_stats[current_game]
             self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
-            self.current_game_time_label.setText(f"Current Game Time: {self.game_manager.stats_tracker.format_time(current_game_stats['time_spent'])}")
+
+            # Calculate elapsed time since the current game started
+            current_game_time = (time.time() - self.game_manager.stats_tracker.start_time
+                                if self.game_manager.stats_tracker.start_time else 0) + current_game_stats['time_spent']
+            self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_time)}")
         else:
+            # If no game is active, reset the current game stats labels
             self.current_game_swaps_label.setText("Current Game Swaps: 0")
             self.current_game_time_label.setText("Current Game Time: 00:00:00")
+
+    def format_time(self, seconds):
+        # Method to format seconds into hh:mm:ss
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
 
 
 
