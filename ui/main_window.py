@@ -3,7 +3,6 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QF
 from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
-from stat_tracker import StatTracker
 from session_manager import SessionManager
 import Python_Client
 
@@ -21,7 +20,6 @@ class MainWindow(QMainWindow):
 
         self.game_manager = GameManager()
         self.config_manager = ConfigManager()
-        self.stat_tracker = StatTracker() 
         self.session_manager = SessionManager() 
         self.config = self.config_manager.load_config()              
         # Initialize tabs
@@ -38,7 +36,6 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.create_game_management_tab(), "Game Management")
         self.tab_widget.addTab(self.create_shuffle_management_tab(), "Shuffle Management")
         self.tab_widget.addTab(self.create_configuration_tab(), "Configuration")
-        self.tab_widget.addTab(self.create_stats_tab(), "Stats")
         self.tab_widget.addTab(self.create_twitch_integration_tab(), "Twitch Integration")
 
 
@@ -509,9 +506,7 @@ class MainWindow(QMainWindow):
         if session_data:
             self.current_session_name = selected_session            
             self.game_manager.load_games(session_data['games'])
-            self.refresh_game_list()            
-            self.stat_tracker.load_stats(session_data['stats'])
-            # Assuming you have methods to handle the loading of games and stats
+            self.refresh_game_list()         
             # You would also handle the restoration of save states here
             QMessageBox.information(self, "Session Loaded", f"Session '{selected_session}' has been loaded successfully.")
         else:
@@ -521,9 +516,8 @@ class MainWindow(QMainWindow):
         session_name, ok = QInputDialog.getText(self, "Save Session", "Enter a name for the session:")
         if ok and session_name:
             games = self.game_manager.games  # If this is how you access the current games
-            stats = self.stat_tracker.get_stats()
             save_states = {}  # Placeholder for save states logic
-            self.session_manager.save_session(session_name, games, stats, save_states)
+            self.session_manager.save_session(session_name, games, save_states)
             QMessageBox.information(self, "Session", f"Session '{session_name}' saved successfully")
             self.session_dropdown.addItem(session_name)    
             
@@ -578,55 +572,6 @@ class MainWindow(QMainWindow):
             # Raised if conversion to int fails
             return False, "Intervals must be numeric."                            
 
-
-
-
-
-    
-    def create_stats_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        # Dropdown to select a specific game's stats
-        self.game_stats_dropdown = QComboBox()
-        self.game_stats_dropdown.addItem("All Games")
-        self.game_stats_dropdown.addItems(self.game_manager.games.keys())
-        self.game_stats_dropdown.currentTextChanged.connect(self.update_stats_display)
-        layout.addWidget(self.game_stats_dropdown)
-
-        # Label for stats display
-        self.stats_label = QLabel("Select a game to view detailed stats")
-        layout.addWidget(self.stats_label)
-
-        # Button to update stats display
-        update_stats_button = QPushButton("Update Stats")
-        update_stats_button.clicked.connect(self.update_stats_display)
-        layout.addWidget(update_stats_button)
-
-        # Button to export stats
-        export_stats_button = QPushButton("Export Stats")
-        export_stats_button.clicked.connect(self.export_stats)
-        layout.addWidget(export_stats_button)
-
-        return tab
-
-    def update_stats_display(self, selected_game=None):
-        selected_game = self.game_stats_dropdown.currentText()
-        total_time, total_swaps, detailed_stats = self.stat_tracker.get_stats()
-
-        if selected_game and selected_game != "All Games":
-            game_stats = detailed_stats.get(selected_game, {})
-            stats_text = f"Stats for {selected_game}:\nTotal Time: {game_stats.get('total_time', 0)} seconds"
-        else:
-            stats_text = f"Total Time: {total_time} seconds\nTotal Swaps: {total_swaps}\nGame Times: {detailed_stats}"
-
-        self.stats_label.setText(stats_text)
-
-    def export_stats(self):
-        file_path, _ = QFileDialog.getSaveFileName(self, "Export Stats", "", "JSON Files (*.json)")
-        if file_path:
-            self.stat_tracker.export_stats(file_path)
-            QMessageBox.information(self, "Export", "Stats exported successfully")
     
 
 
