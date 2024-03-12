@@ -9,8 +9,8 @@ import Python_Client
 import os, random, subprocess
 
 class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Retro Roulette")
         self.setGeometry(100, 100, 800, 600)  # Adjust size as needed
 
@@ -25,7 +25,10 @@ class MainWindow(QMainWindow):
         # Initialize tabs
         self.init_tabs()  
         self.refresh_game_list()
-        self.update_session_info()            
+        self.update_session_info()
+        self.stats_timer = QTimer(self)
+        self.stats_timer.timeout.connect(self.update_stats_display)
+        self.stats_timer.start(1000)                    
         
      
         
@@ -36,7 +39,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.create_game_management_tab(), "Game Management")
         self.tab_widget.addTab(self.create_shuffle_management_tab(), "Shuffle Management")
         self.tab_widget.addTab(self.create_configuration_tab(), "Configuration")
-        self.tab_widget.addTab(self.create_twitch_integration_tab(), "Twitch Integration")
+        self.tab_widget.addTab(self.create_stats_tab(), "Stats")
 
 
 
@@ -307,6 +310,9 @@ class MainWindow(QMainWindow):
         # Select a random game from the available paths
         next_game_path = random.choice(game_paths)
 
+        next_game_name = self.game_manager.games[next_game_path]['name']
+        self.game_manager.switch_game(next_game_name)
+
         # Save the state of the current game before loading the next one
         if self.current_game_path:
             self.save_game_state(self.current_game_path)
@@ -517,7 +523,8 @@ class MainWindow(QMainWindow):
         if ok and session_name:
             games = self.game_manager.games  # If this is how you access the current games
             save_states = {}  # Placeholder for save states logic
-            self.session_manager.save_session(session_name, games, save_states)
+            stats = self.game_manager.stats_tracker.get_stats()  # or however you access the stats
+            self.session_manager.save_session(session_name, games, stats, save_states)
             QMessageBox.information(self, "Session", f"Session '{session_name}' saved successfully")
             self.session_dropdown.addItem(session_name)    
             
@@ -572,7 +579,40 @@ class MainWindow(QMainWindow):
             # Raised if conversion to int fails
             return False, "Intervals must be numeric."                            
 
-    
+    def create_stats_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Labels to display stats
+        self.total_swaps_label = QLabel("Total Swaps: 0")
+        self.total_time_label = QLabel("Total Time: 00:00:00")
+        self.current_game_swaps_label = QLabel("Current Game Swaps: 0")
+        self.current_game_time_label = QLabel("Current Game Time: 00:00:00")
+
+        layout.addWidget(self.total_swaps_label)
+        layout.addWidget(self.total_time_label)
+        layout.addWidget(self.current_game_swaps_label)
+        layout.addWidget(self.current_game_time_label)
+
+        return tab
+
+    def update_stats_display(self):
+        # In main_window.py
+        current_game = self.game_manager.current_game
+        game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
+
+        self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
+        self.total_time_label.setText(f"Total Time: {self.game_manager.stats_tracker.format_time(total_time)}")
+
+        if current_game and current_game in game_stats:
+            current_game_stats = game_stats[current_game]
+            self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
+            self.current_game_time_label.setText(f"Current Game Time: {self.game_manager.stats_tracker.format_time(current_game_stats['time_spent'])}")
+        else:
+            self.current_game_swaps_label.setText("Current Game Swaps: 0")
+            self.current_game_time_label.setText("Current Game Time: 00:00:00")
+
+
 
 
 

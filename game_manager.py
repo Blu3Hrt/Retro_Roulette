@@ -1,10 +1,19 @@
 import json
 import os
+from stat_tracker import StatsTracker
 
 class GameManager:
     def __init__(self, file_path='games.json'):
         self.file_path = file_path
         self.games = {}
+        self.stats_tracker = StatsTracker()
+        self.current_game = None
+
+    def switch_game(self, game_name):
+        if self.current_game:
+            self.stats_tracker.end_game(self.current_game)
+        self.current_game = game_name
+        self.stats_tracker.start_game(game_name)
 
     def load_games(self, game_data):
 
