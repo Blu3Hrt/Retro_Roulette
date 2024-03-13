@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QComboBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QComboBox, QMenu
 from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
 from session_manager import SessionManager
 import Python_Client
+import psutil
 
 import os, random, subprocess, time
 
@@ -12,7 +13,7 @@ class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Retro Roulette")
-        self.setGeometry(100, 100, 800, 600)  # Adjust size as needed
+        self.setGeometry(100, 100, 800, 600)  # TODAdjust size as needed
 
         # Create Tab Widget
         self.tab_widget = QTabWidget(self)
@@ -49,53 +50,47 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # Search bar for filtering games
-        self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Search games...")
-        self.search_bar.textChanged.connect(self.filter_games)
-        layout.addWidget(self.search_bar)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search games...")
+        self.search_input.textChanged.connect(self.filter_games)
+        layout.addWidget(self.search_input)
 
-        # Button for adding multiple games
         add_games_button = QPushButton("Add Games")
         add_games_button.clicked.connect(self.add_games)
         layout.addWidget(add_games_button)
 
-        # Button for adding games from a directory
         add_directory_button = QPushButton("Add Games from Directory")
         add_directory_button.clicked.connect(self.add_games_from_directory)
         layout.addWidget(add_directory_button)
 
-        # List to display games
         self.game_list = QListWidget()
+        self.game_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.game_list.customContextMenuRequested.connect(self.show_game_context_menu)
         layout.addWidget(self.game_list)
 
-        # Buttons for game list management
-        remove_button = QPushButton("Remove Selected Game")
-        remove_button.clicked.connect(self.remove_selected_game)
-        layout.addWidget(remove_button)
-
-        mark_completed_button = QPushButton("Mark as Completed")
-        mark_completed_button.clicked.connect(self.mark_game_as_completed)
-        layout.addWidget(mark_completed_button)
-
-        rename_button = QPushButton("Rename Selected Game")
-        rename_button.clicked.connect(self.prompt_rename_game)
-        layout.addWidget(rename_button)
-        
-        # Button for setting goals
-        set_goals_button = QPushButton("Set Goals for Selected Game")
-        set_goals_button.clicked.connect(self.prompt_set_game_goals)
-        layout.addWidget(set_goals_button)
-        
-
-        # Label for displaying game details
-        self.game_details_label = QLabel("Select a game to view details")
-        layout.addWidget(self.game_details_label)
-
-        # Update game list widget to connect selection change signal
-        self.game_list.itemSelectionChanged.connect(self.display_game_details)
+        self.game_list.itemDoubleClicked.connect(self.handle_double_click)
 
         return tab
+
+    def show_game_context_menu(self, pos):
+        menu = QMenu(self)
+        remove_action = menu.addAction("Remove Selected Game")
+        complete_action = menu.addAction("Mark as Completed")
+        rename_action = menu.addAction("Rename Selected Game")
+        goals_action = menu.addAction("Set Goals for Selected Game")
+
+        action = menu.exec_(self.game_list.mapToGlobal(pos))
+        if action == remove_action:
+            self.remove_selected_game()
+        elif action == complete_action:
+            self.mark_game_as_completed()
+        elif action == rename_action:
+            self.prompt_rename_game()
+        elif action == goals_action:
+            self.prompt_set_game_goals()
+
+    def handle_double_click(self, item):
+        self.prompt_rename_game()
     
     def prompt_set_game_goals(self):
         selected_items = self.game_list.selectedItems()
@@ -268,7 +263,18 @@ class MainWindow(QMainWindow):
         self.execute_bizhawk_script()
 
         # Additional logic if needed, such as verifying launch success
-        # ...
+        # Check if BizHawk is running and the Lua script is active
+        self.is_bizhawk_running = False
+        for proc in psutil.process_iter():
+            try:
+                if proc.name() == "BizHawk.exe" and "bizhawk_server.lua" in proc.cmdline():
+                    self.is_bizhawk_running = True
+                    break
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+
+        if not self.is_bizhawk_running:
+            QMessageBox.warning(self, "Error", "Failed to launch BizHawk.")
 
     def start_shuffle(self):
         if not self.is_shuffling:
@@ -281,6 +287,8 @@ class MainWindow(QMainWindow):
             
             self.is_shuffling = True
             self.shuffle_games()
+        #TODO: Add logic to prevent starting shuffle if it is already active
+        #TODO: Add logic to prevent starting shuffle if BizHawk is not running
 
     def determine_shuffle_interval(self):
         # Placeholder: Determine the shuffle interval based on configuration
