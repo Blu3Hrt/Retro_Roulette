@@ -622,11 +622,13 @@ class MainWindow(QMainWindow):
         # Labels to display stats
         self.total_swaps_label = QLabel("Total Swaps: 0")
         self.total_time_label = QLabel("Total Time: 00:00:00")
+        self.game_name_label = QLabel("Current Game: None")
         self.current_game_swaps_label = QLabel("Current Game Swaps: 0")
         self.current_game_time_label = QLabel("Current Game Time: 00:00:00")
 
         layout.addWidget(self.total_swaps_label)
         layout.addWidget(self.total_time_label)
+        layout.addWidget(self.game_name_label)
         layout.addWidget(self.current_game_swaps_label)
         layout.addWidget(self.current_game_time_label)
 
@@ -634,7 +636,7 @@ class MainWindow(QMainWindow):
 
     def update_stats_display(self):
         if hasattr(self, 'total_swaps_label'):
-            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats(self.game_manager.stats_tracker.game_stats)
+            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
             real_time_total = total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
 
             self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
@@ -643,9 +645,11 @@ class MainWindow(QMainWindow):
             current_game = self.game_manager.current_game
             if current_game and current_game in game_stats:
                 current_game_stats = game_stats[current_game]
-                self.current_game_swaps_label.setText(f"Current Game: {current_game} | Swaps: {current_game_stats['swaps']}")
-                self.current_game_time_label.setText(f"Current Game: {current_game} | Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
+                self.game_name_label.setText(f"Current Game: {current_game}")
+                self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
+                self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
             else:
+                self.game_name_label.setText("Current Game: None")
                 self.current_game_swaps_label.setText("Current Game: None | Swaps: 0")
                 self.current_game_time_label.setText("Current Game: None | Time: 00:00:00")
             self.update_session_info()
@@ -660,7 +664,7 @@ class MainWindow(QMainWindow):
         session_data = self.session_manager.load_session('Default Session')
         if session_data:
             self.game_manager.games = session_data['games']
-            self.game_manager.stats_tracker.get_stats(session_data['stats'])
+            self.game_manager.stats_tracker.get_stats()
             self.game_manager.load_save_states(session_data['save_states'])
             self.current_session_name = 'Default Session'
 

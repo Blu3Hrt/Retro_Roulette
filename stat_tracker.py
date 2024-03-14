@@ -27,7 +27,7 @@ class StatsTracker:
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def get_stats(self, stats):
+    def get_stats(self):
         return self.game_stats, self.total_swaps, self.total_shuffling_time
     
     def format_total_time(self):
