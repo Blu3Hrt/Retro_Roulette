@@ -8,7 +8,7 @@ from ui.style import Style
 import Python_Client
 import psutil
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import os, random, subprocess, time, json, sys
 
 class MainWindow(QMainWindow):
@@ -340,8 +340,11 @@ class MainWindow(QMainWindow):
         # Save and load game state
         if self.current_game_path:
             self.save_game_state(self.current_game_path)
+            self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
         self.load_game(next_game_path)
         self.load_game_state(next_game_path)
+        self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
+        self.update_session_info()
 
         # Update current game path
         self.current_game_path = next_game_path
@@ -506,6 +509,8 @@ class MainWindow(QMainWindow):
                     session_data = json.load(f)
                     self.current_session_name = os.path.basename(session_path)
                     self.game_manager.load_games(session_data['games'])
+                    self.game_manager.load_stats(session_data['stats'])
+                    self.game_manager.load_save_states(session_data['save_states'])
                     self.refresh_game_list()
                     self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)
             except:
@@ -524,7 +529,7 @@ class MainWindow(QMainWindow):
         file_dialog.setDefaultSuffix("*.json")
         if file_dialog.exec():
             file_path = file_dialog.selectedFiles()[0]
-            data = {'name': self.current_session_name, 'games': self.game_manager.games, 'stats': self.game_manager.stats_tracker.get_stats()}
+            data = {'name': self.current_session_name, 'games': self.game_manager.games, 'stats': self.game_manager.stats_tracker.get_stats(), 'save_states': self.game_manager.save_states}
             with open(file_path, 'w') as f:
                 json.dump(data, f, indent=4)
             self.statusBar().showMessage(f"Session saved successfully to {file_path}", 5000)
@@ -556,24 +561,25 @@ class MainWindow(QMainWindow):
         else:
             self.statusBar().showMessage("No session selected for renaming.", 5000)
 
-    
+    def get_session_path(self, session_name):
+        return os.path.join(self.session_manager.directory, session_name)
             
     def update_session_info(self):
-        """Update session info label with session details"""
-        if hasattr(self, 'session_info_label'):
-            if self.current_session_name:
-                session_info = self.session_manager.load_session(self.current_session_name)
-                if session_info:
-                    games_count = len(session_info['games'])
-                    stats = session_info['stats'][0]
-                    swaps_count = stats.get('total_swaps', 0)
-                    time_total = self.format_time(stats.get('total_time', 0))
-                    self.session_info_label.setText(
-                        f"Session: {self.current_session_name} | Games: {games_count} | Swaps: {swaps_count} | Time: {time_total}")
-                else:
-                    self.session_info_label.setText(f"Failed to load {self.current_session_name}")
+        # Implement the code for the TODO comment
+        if self.current_session_name:
+            session_info = self.session_manager.load_session(self.current_session_name)
+            if session_info:
+                games = session_info['games']
+                game_count = len(games)
+                completed_count = len([g for g in games.values() if g.get('completed', False)])
+                total_time = sum([g.get('time_played', 0) for g in games.values()])
+                total_playtime = timedelta(seconds=total_time)
+                self.session_info_label.setText(f"Session: {self.current_session_name}\nGames: {game_count}\nCompleted: {completed_count}\nTotal Time: {str(total_playtime)}")
             else:
-                self.session_info_label.setText("Load a session to view details")
+                self.session_info_label.setText("Select a session to view details")
+        else:
+            self.session_info_label.setText("Select a session to view details")
+
 
             
     def apply_new_config(self):
@@ -628,7 +634,7 @@ class MainWindow(QMainWindow):
 
     def update_stats_display(self):
         if hasattr(self, 'total_swaps_label'):
-            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
+            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats(self.game_manager.stats_tracker.game_stats)
             real_time_total = total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
 
             self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
@@ -637,12 +643,11 @@ class MainWindow(QMainWindow):
             current_game = self.game_manager.current_game
             if current_game and current_game in game_stats:
                 current_game_stats = game_stats[current_game]
-                self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
-                self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
+                self.current_game_swaps_label.setText(f"Current Game: {current_game} | Swaps: {current_game_stats['swaps']}")
+                self.current_game_time_label.setText(f"Current Game: {current_game} | Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
             else:
-                self.current_game_swaps_label.setText("Current Game Swaps: 0")
-                self.current_game_time_label.setText("Current Game Time: 00:00:00")
-
+                self.current_game_swaps_label.setText("Current Game: None | Swaps: 0")
+                self.current_game_time_label.setText("Current Game: None | Time: 00:00:00")
             self.update_session_info()
 
     def format_time(self, seconds):
@@ -652,12 +657,12 @@ class MainWindow(QMainWindow):
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def load_default_session(self):
-        """Load the default session"""
-        self.current_session_name = 'Default Session'
-        self.game_manager.load_games(self.session_manager.get_session_info('Default Session')['games'])
-        self.refresh_game_list()
-        self.update_session_info()
-        self.statusBar().showMessage("Default session loaded successfully.", 5000)
+        session_data = self.session_manager.load_session('Default Session')
+        if session_data:
+            self.game_manager.games = session_data['games']
+            self.game_manager.stats_tracker.get_stats(session_data['stats'])
+            self.game_manager.load_save_states(session_data['save_states'])
+            self.current_session_name = 'Default Session'
 
 
     def create_default_session(self):
@@ -668,6 +673,15 @@ class MainWindow(QMainWindow):
             self.session_manager.save_session('Default Session', self.game_manager.games, self.game_manager.stats_tracker.get_stats(), {}, 'sessions/Default Session.json')
             self.current_session_name = 'Default Session'
             self.update_session_info()
+
+
+
+
+
+
+
+
+
 
     def create_twitch_integration_tab(self):
         # Placeholder for Twitch Integration tab content

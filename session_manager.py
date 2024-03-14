@@ -6,6 +6,7 @@ class SessionManager:
         self.directory = directory
         os.makedirs(directory, exist_ok=True)
 
+# Update the save_session method in the SessionManager class to include the 'file_path' argument
     def save_session(self, name, games, stats, save_states, file_path):
         """Save a session to disk."""
         session_data = {
@@ -14,26 +15,13 @@ class SessionManager:
             'stats': stats,
             'save_states': save_states,
         }
-        file_path = os.path.join(self.directory, f"{name}.json")
         with open(file_path, 'w') as file:
             json.dump(session_data, file, indent=4)
 
     def load_session(self, session_name):
-        """Check for bugs such as null pointer references, unhandled exceptions,
-        and more.
-        """
         file_path = os.path.join(self.directory, f"{session_name}.json")
-        try:
-            with open(file_path, 'r') as file:
-                return json.load(file)
-        except FileNotFoundError:
-            return None
-        except OSError as e:
-            raise e
-        except json.JSONDecodeError as e:
-            raise e
-        except Exception:
-            raise
+        with open(file_path, 'r') as file:
+            return json.load(file)
 
     def get_saved_sessions(self):
         return [f.replace('.json', '') for f in os.listdir(self.directory) if f.endswith('.json')]

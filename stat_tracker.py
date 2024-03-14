@@ -18,15 +18,19 @@ class StatsTracker:
         if game_name in self.game_stats and self.start_time:
             time_spent = time.time() - self.start_time
             self.game_stats[game_name]['time_spent'] += time_spent
+            self.game_stats[game_name]['formatted_time_spent'] = self.format_time(time_spent)
             self.total_shuffling_time += time_spent
+            self.total_formatted_shuffling_time = self.format_time(self.total_shuffling_time)
 
     def format_time(self, seconds):
         hours, remainder = divmod(int(seconds), 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def get_stats(self):
+    def get_stats(self, stats):
         return self.game_stats, self.total_swaps, self.total_shuffling_time
-
-
-
+    
+    def format_total_time(self):
+        hours, remainder = divmod(int(self.total_shuffling_time), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"

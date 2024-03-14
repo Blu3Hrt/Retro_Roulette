@@ -8,6 +8,7 @@ class GameManager:
         self.games = {}
         self.stats_tracker = StatsTracker()
         self.current_game = None
+        self.save_states = {}
 
     def switch_game(self, game_name):
         if self.current_game:
@@ -58,7 +59,9 @@ class GameManager:
             
     def load_save_states(self, save_states_data):
         # Implement based on how your application should handle save states
-        self.save_states = save_states_data            
+        for game_path, save_state in save_states_data.items():
+            if game_path in self.games:
+                self.save_states[game_path] = save_state
 
     def get_current_games(self):
         # Assuming 'games' is a dictionary of game data keyed by something like file paths
