@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
     def init_tabs(self):
         # Create tabs for different functionalities
         self.tab_widget.addTab(self.create_game_management_tab(), "Game Management")
+        self.tab_widget.addTab(self.create_session_management_tab(), "Session Management")
         self.tab_widget.addTab(self.create_shuffle_management_tab(), "Shuffle Management")
         self.tab_widget.addTab(self.create_configuration_tab(), "Configuration")
         self.tab_widget.addTab(self.create_stats_tab(), "Stats")
@@ -426,23 +427,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(save_config_button)
         layout.addWidget(load_config_button)
 
-        # Add a label to display session info
-        self.session_info_label = QLabel("Select a session to view details")
-        layout.addWidget(self.session_info_label)
 
-        # Set up the save, load, rename, and delete session buttons
-        save_session_button = QPushButton("Save Current Session")
-        save_session_button.clicked.connect(self.save_current_session)
-        load_session_button = QPushButton("Load Session")
-        load_session_button.clicked.connect(self.load_selected_session)
-        rename_session_button = QPushButton("Rename Selected Session")
-        rename_session_button.clicked.connect(self.rename_current_session)
-        delete_session_button = QPushButton("Delete Selected Session")
-        delete_session_button.clicked.connect(self.delete_current_session)
-        layout.addWidget(save_session_button)
-        layout.addWidget(load_session_button)
-        layout.addWidget(rename_session_button)
-        layout.addWidget(delete_session_button)
 
         return tab
 
@@ -496,6 +481,142 @@ class MainWindow(QMainWindow):
         # Load configurations using ConfigManager
         self.config = self.config_manager.load_config()
         
+
+
+
+            
+    def apply_new_config(self):
+        # Extract and validate interval settings
+        new_min_interval = self.min_interval_input.text()
+        new_max_interval = self.max_interval_input.text()
+        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
+
+        # Validate and save the new configuration
+        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
+        if valid:
+            self.config_manager.save_config({'min_shuffle_interval': int(new_min_interval),
+                                             'max_shuffle_interval': int(new_max_interval)})
+            self.load_config()  # Reload configuration to apply changes
+            self.statusBar().showMessage("Configuration updated successfully.", 5000)
+        else:
+            QMessageBox.warning(self, "Invalid Input", message)
+            
+    def validate_intervals(self, min_val, max_val):
+        """Validate shuffle interval settings"""
+        try:
+            min_interval = int(min_val)
+            max_interval = int(max_val)
+
+            if min_interval <= 0 or max_interval <= 0:
+                return False, "Intervals must be positive numbers."
+            elif min_interval > max_interval:
+                return False, "Minimum interval cannot be greater than maximum interval."
+
+            return True, "Valid intervals."
+
+        except ValueError:
+            return False, "Intervals must be numeric."
+
+
+    def create_stats_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Labels to display stats
+        self.total_swaps_label = QLabel("Total Swaps: 0")
+        self.total_time_label = QLabel("Total Time: 00:00:00")
+        self.game_name_label = QLabel("Current Game: None")
+        self.current_game_swaps_label = QLabel("Current Game Swaps: 0")
+        self.current_game_time_label = QLabel("Current Game Time: 00:00:00")
+
+        layout.addWidget(self.total_swaps_label)
+        layout.addWidget(self.total_time_label)
+        layout.addWidget(self.game_name_label)
+        layout.addWidget(self.current_game_swaps_label)
+        layout.addWidget(self.current_game_time_label)
+
+        return tab
+
+    def update_stats_display(self):
+        if hasattr(self, 'total_swaps_label'):
+            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
+            real_time_total = total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
+
+            self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
+            self.total_time_label.setText(f"Total Time: {self.format_time(real_time_total)}")
+
+            current_game = self.game_manager.current_game
+            if current_game and current_game in game_stats:
+                current_game_stats = game_stats[current_game]
+                self.game_name_label.setText(f"Current Game: {current_game}")
+                self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
+                self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
+            else:
+                self.game_name_label.setText("Current Game: None")
+                self.current_game_swaps_label.setText("Current Game: None | Swaps: 0")
+                self.current_game_time_label.setText("Current Game: None | Time: 00:00:00")
+            self.update_session_info()
+
+    def format_time(self, seconds):
+        # Method to format seconds into hh:mm:ss
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+
+
+
+
+
+
+
+
+
+
+    def create_session_management_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+
+        # Add a label to display session info
+        self.session_info_label = QLabel("Select a session to view details")
+        layout.addWidget(self.session_info_label)
+
+        # Set up the save, load, rename, and delete session buttons
+        save_session_button = QPushButton("Save Current Session")
+        save_session_button.clicked.connect(self.save_current_session)
+        load_session_button = QPushButton("Load Session")
+        load_session_button.clicked.connect(self.load_selected_session)
+        rename_session_button = QPushButton("Rename Selected Session")
+        rename_session_button.clicked.connect(self.rename_current_session)
+        delete_session_button = QPushButton("Delete Selected Session")
+        delete_session_button.clicked.connect(self.delete_current_session)
+        layout.addWidget(save_session_button)
+        layout.addWidget(load_session_button)
+        layout.addWidget(rename_session_button)
+        layout.addWidget(delete_session_button)
+
+        return tab
+
+    def load_default_session(self):
+        session_data = self.session_manager.load_session('Default Session')
+        if session_data:
+            self.game_manager.games = session_data['games']
+            self.game_manager.stats_tracker.get_stats()
+            self.game_manager.load_save_states(session_data['save_states'])
+            self.current_session_name = 'Default Session'
+
+
+    def create_default_session(self):
+        """Creates a default session if one doesn't already exist, or loads it if it already exists"""
+        if os.path.exists('sessions/Default Session.json'):
+            self.load_default_session()
+        else:
+            self.session_manager.save_session('Default Session', self.game_manager.games, self.game_manager.stats_tracker.get_stats(), {}, 'sessions/Default Session.json')
+            self.current_session_name = 'Default Session'
+            self.update_session_info()
+            
+            
     def load_selected_session(self):
         sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
         file_dialog = QFileDialog(directory=sessions_dir)
@@ -578,118 +699,4 @@ class MainWindow(QMainWindow):
             else:
                 self.session_info_label.setText("Select a session to view details")
         else:
-            self.session_info_label.setText("Select a session to view details")
-
-
-            
-    def apply_new_config(self):
-        # Extract and validate interval settings
-        new_min_interval = self.min_interval_input.text()
-        new_max_interval = self.max_interval_input.text()
-        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
-
-        # Validate and save the new configuration
-        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
-        if valid:
-            self.config_manager.save_config({'min_shuffle_interval': int(new_min_interval),
-                                             'max_shuffle_interval': int(new_max_interval)})
-            self.load_config()  # Reload configuration to apply changes
-            self.statusBar().showMessage("Configuration updated successfully.", 5000)
-        else:
-            QMessageBox.warning(self, "Invalid Input", message)
-            
-    def validate_intervals(self, min_val, max_val):
-        """Validate shuffle interval settings"""
-        try:
-            min_interval = int(min_val)
-            max_interval = int(max_val)
-
-            if min_interval <= 0 or max_interval <= 0:
-                return False, "Intervals must be positive numbers."
-            elif min_interval > max_interval:
-                return False, "Minimum interval cannot be greater than maximum interval."
-
-            return True, "Valid intervals."
-
-        except ValueError:
-            return False, "Intervals must be numeric."
-
-
-    def create_stats_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-
-        # Labels to display stats
-        self.total_swaps_label = QLabel("Total Swaps: 0")
-        self.total_time_label = QLabel("Total Time: 00:00:00")
-        self.game_name_label = QLabel("Current Game: None")
-        self.current_game_swaps_label = QLabel("Current Game Swaps: 0")
-        self.current_game_time_label = QLabel("Current Game Time: 00:00:00")
-
-        layout.addWidget(self.total_swaps_label)
-        layout.addWidget(self.total_time_label)
-        layout.addWidget(self.game_name_label)
-        layout.addWidget(self.current_game_swaps_label)
-        layout.addWidget(self.current_game_time_label)
-
-        return tab
-
-    def update_stats_display(self):
-        if hasattr(self, 'total_swaps_label'):
-            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
-            real_time_total = total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
-
-            self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
-            self.total_time_label.setText(f"Total Time: {self.format_time(real_time_total)}")
-
-            current_game = self.game_manager.current_game
-            if current_game and current_game in game_stats:
-                current_game_stats = game_stats[current_game]
-                self.game_name_label.setText(f"Current Game: {current_game}")
-                self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
-                self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
-            else:
-                self.game_name_label.setText("Current Game: None")
-                self.current_game_swaps_label.setText("Current Game: None | Swaps: 0")
-                self.current_game_time_label.setText("Current Game: None | Time: 00:00:00")
-            self.update_session_info()
-
-    def format_time(self, seconds):
-        # Method to format seconds into hh:mm:ss
-        hours, remainder = divmod(int(seconds), 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-    def load_default_session(self):
-        session_data = self.session_manager.load_session('Default Session')
-        if session_data:
-            self.game_manager.games = session_data['games']
-            self.game_manager.stats_tracker.get_stats()
-            self.game_manager.load_save_states(session_data['save_states'])
-            self.current_session_name = 'Default Session'
-
-
-    def create_default_session(self):
-        """Creates a default session if one doesn't already exist, or loads it if it already exists"""
-        if os.path.exists('sessions/Default Session.json'):
-            self.load_default_session()
-        else:
-            self.session_manager.save_session('Default Session', self.game_manager.games, self.game_manager.stats_tracker.get_stats(), {}, 'sessions/Default Session.json')
-            self.current_session_name = 'Default Session'
-            self.update_session_info()
-
-
-
-
-
-
-
-
-
-
-    def create_twitch_integration_tab(self):
-        # Placeholder for Twitch Integration tab content
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        # Add widgets to layout here...
-        return tab
+            self.session_info_label.setText("Select a session to view details")            
