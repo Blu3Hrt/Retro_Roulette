@@ -26,7 +26,8 @@ class MainWindow(QMainWindow):
         self.session_manager = SessionManager()
         self.style_setter = Style() 
         self.config = self.config_manager.load_config()              
-        self.current_session_name = 'Default Session'  # Initialize with None or a default session name
+        self.current_session_name = None  # Initialize with None or a default session name
+        self.create_default_session()  # Create a default session if one doesn't exist
         # Initialize tabs
         self.init_tabs()
         self.init_ui()  
@@ -39,6 +40,9 @@ class MainWindow(QMainWindow):
      
     def init_ui(self):
         Style.set_dark_style(self)
+        self.status_bar = self.statusBar()
+        self.status_label = QLabel("Ready")
+        self.status_bar.addWidget(self.status_label, 1)
         
                       
 
@@ -242,10 +246,12 @@ class MainWindow(QMainWindow):
         return None            
             
     def refresh_game_list(self):
-        self.game_list.clear()
-        for path, data in self.game_manager.games.items():
-            item_text = f"{data['name']} - {'Completed' if data['completed'] else 'In Progress'}"
-            self.game_list.addItem(item_text)            
+        if hasattr(self, 'game_list'):
+            self.game_list.clear()
+        for game in self.game_manager.games.values():
+            item_text = f"{game['name']} - {'Completed' if game['completed'] else 'In Progress'}"
+            if hasattr(self, 'game_list'):
+                self.game_list.addItem(item_text)
 
 
 
@@ -317,39 +323,33 @@ class MainWindow(QMainWindow):
             self.shuffle_games()
 
     def shuffle_games(self):
-        # Check if shuffling is active and if there are games available
+        # Skip shuffling if there are no games or shuffling is disabled
         if not self.is_shuffling or not self.game_manager.games:
             return
 
-        game_paths = list(self.game_manager.games.keys())
+        # Remove current game from available games
+        available_games = list(self.game_manager.games.keys())
+        if self.current_game_path and len(available_games) > 1:
+            available_games.remove(self.current_game_path)
 
-        # Avoid repeating the same game immediately
-        if self.current_game_path and len(game_paths) > 1:
-            game_paths.remove(self.current_game_path)
-
-        # Select a random game from the available paths
-        next_game_path = random.choice(game_paths)
-
+        # Select a random game and switch to it
+        next_game_path = random.choice(available_games)
         next_game_name = self.game_manager.games[next_game_path]['name']
         self.game_manager.switch_game(next_game_name)
 
-        # Save the state of the current game before loading the next one
+        # Save and load game state
         if self.current_game_path:
             self.save_game_state(self.current_game_path)
-
-        # Load the next game and its state
         self.load_game(next_game_path)
         self.load_game_state(next_game_path)
 
-        # Update the current game path
+        # Update current game path
         self.current_game_path = next_game_path
 
-        # Get user-configured shuffle intervals
-        min_interval = self.config.get('min_shuffle_interval', 30)  # Default to 30 seconds
-        max_interval = self.config.get('max_shuffle_interval', 60)  # Default to 60 seconds
-
+        # Schedule next shuffle
+        min_interval, max_interval = self.config.get('min_shuffle_interval', 30), self.config.get('max_shuffle_interval', 60)
         shuffle_interval = random.randint(min_interval, max_interval)
-        QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)     
+        QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)
 
     def ensure_directory_exists(self, state_path):
         directory = os.path.dirname(state_path)
@@ -370,24 +370,18 @@ class MainWindow(QMainWindow):
         Python_Client.load_rom(game_path)
 
     def load_game_state(self, game_path):
-        state_path = self.get_state_path(game_path)
-        self.ensure_directory_exists(state_path)  # Ensure the directory exists
-        if os.path.exists(state_path):
-            Python_Client.load_state(state_path)  # Load the game state
+        state_file = self.get_state_path(game_path)
+        self.ensure_directory_exists(state_file)
+        if os.path.exists(state_file):
+            Python_Client.load_state(state_file)
         else:
-            print(f"No save state found for {game_path}. Starting new game.")
-            self.save_game_state(game_path)  # Save a new state for the game
+            self.save_game_state(game_path)
 
     def execute_bizhawk_script(self):
-        # Get the BizHawk path from the configuration
-        bizhawk_path = self.config.get('bizhawk_path', 'default_bizhawk_path')
-
-        # Path to the Lua script
-        lua_script_path = "Lua/bizhawk_server.lua"
-
-        # Construct the command to launch BizHawk with the Lua script
-        command = [bizhawk_path, "--lua=" + lua_script_path]
-
+        """Launch BizHawk with the Lua script"""
+        bizhawk_exe = self.config["bizhawk_path"]
+        lua_script = "Lua/bizhawk_server.lua"
+        command = [bizhawk_exe, "--lua=" + lua_script]
         try:
             subprocess.Popen(command)
         except FileNotFoundError:
@@ -408,64 +402,47 @@ class MainWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
 
-        # BizHawk Path Configuration
-        self.bizhawk_path_input = QLineEdit()
-        self.bizhawk_path_input.setText(self.config.get('bizhawk_path', ''))
-        browse_bizhawk_button = QPushButton("Browse")
-        browse_bizhawk_button.clicked.connect(self.browse_bizhawk_path)
+        # Set up the BizHawk path input and button
+        self.bizhawk_path_input = QLineEdit(self.config.get('bizhawk_path', ''))
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self.browse_bizhawk_path)
         layout.addWidget(self.bizhawk_path_input)
-        layout.addWidget(browse_bizhawk_button)
+        layout.addWidget(browse_button)
 
-        # Min Interval Input
-        self.min_interval_input = QLineEdit()
-        min_interval = self.config.get('min_shuffle_interval', '30')  # Default value if not set
-        self.min_interval_input.setText(str(min_interval))
+        # Set up the min and max interval inputs
+        self.min_interval_input = QLineEdit(str(self.config.get('min_shuffle_interval', '30')))
+        self.max_interval_input = QLineEdit(str(self.config.get('max_shuffle_interval', '60')))
         layout.addWidget(self.min_interval_input)
-
-        # Max Interval Input
-        self.max_interval_input = QLineEdit()
-        max_interval = self.config.get('max_shuffle_interval', '60')  # Default value if not set
-        self.max_interval_input.setText(str(max_interval))
         layout.addWidget(self.max_interval_input)
 
-        # Save Configuration Button
+        # Set up the save and load buttons
         save_config_button = QPushButton("Save Configuration")
         save_config_button.clicked.connect(self.save_configuration)
-        layout.addWidget(save_config_button)        
-
-        # Load Configuration Button
         load_config_button = QPushButton("Load Configuration")
         load_config_button.clicked.connect(self.load_configuration)
+        layout.addWidget(save_config_button)
         layout.addWidget(load_config_button)
-        
-        
-        
+
+        # Add a label to display session info
         self.session_info_label = QLabel("Select a session to view details")
         layout.addWidget(self.session_info_label)
 
-               
-
-        # Save Session Button
+        # Set up the save, load, rename, and delete session buttons
         save_session_button = QPushButton("Save Current Session")
         save_session_button.clicked.connect(self.save_current_session)
-        layout.addWidget(save_session_button) 
-        
-        # Load Session Button
         load_session_button = QPushButton("Load Session")
         load_session_button.clicked.connect(self.load_selected_session)
-        layout.addWidget(load_session_button)
-
-        # Button for renaming the selected session
         rename_session_button = QPushButton("Rename Selected Session")
         rename_session_button.clicked.connect(self.rename_current_session)
-        layout.addWidget(rename_session_button)
-        
-        # Button to delete the selected session
         delete_session_button = QPushButton("Delete Selected Session")
         delete_session_button.clicked.connect(self.delete_current_session)
-        layout.addWidget(delete_session_button)      
+        layout.addWidget(save_session_button)
+        layout.addWidget(load_session_button)
+        layout.addWidget(rename_session_button)
+        layout.addWidget(delete_session_button)
 
         return tab
+
 
     def browse_bizhawk_path(self):
         path = QFileDialog.getOpenFileName(self, "Select BizHawk Executable", "", "Executable Files (*.exe)")[0]
@@ -510,16 +487,7 @@ class MainWindow(QMainWindow):
         self.bizhawk_path_input.setText(self.config.get('bizhawk_path', ''))
         self.min_interval_input.setText(str(self.config.get('min_shuffle_interval', '30')))
         self.max_interval_input.setText(str(self.config.get('max_shuffle_interval', '60')))
-        QMessageBox.information(self, "Success", "Configuration loaded successfully.")
-
-    def refresh_game_list(self):
-        # Assuming you have a QListWidget or similar for displaying the game list
-        self.game_list.clear()  # Clear the current list
-
-        for game_path, game_info in self.game_manager.games.items():
-            # Example of how you might format each game's display text
-            display_text = f"{game_info['name']} - Completed: {'Yes' if game_info['completed'] else 'No'}"
-            self.game_list.addItem(display_text)                      
+        self.statusBar().showMessage("Configuration loaded successfully.", 5000)              
 
     def load_config(self):
         # Load configurations using ConfigManager
@@ -539,13 +507,13 @@ class MainWindow(QMainWindow):
                     self.current_session_name = os.path.basename(session_path)
                     self.game_manager.load_games(session_data['games'])
                     self.refresh_game_list()
-                    QMessageBox.information(self, "Session Loaded", f"Session '{self.current_session_name}' has been loaded successfully.")
+                    self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)
             except:
                 QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
 
     def save_current_session(self):
         """Save the current session to a JSON file"""
-        file_name = f"session_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+        file_name = f"{self.current_session_name}.json"
         sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
 
         file_dialog = QFileDialog()
@@ -556,26 +524,24 @@ class MainWindow(QMainWindow):
         file_dialog.setDefaultSuffix("*.json")
         if file_dialog.exec():
             file_path = file_dialog.selectedFiles()[0]
-            session_name = os.path.basename(file_path).split('.')[0]
-            data = {'name': session_name, 'games': self.game_manager.games, 'stats': self.game_manager.stats_tracker.get_stats()}
+            data = {'name': self.current_session_name, 'games': self.game_manager.games, 'stats': self.game_manager.stats_tracker.get_stats()}
             with open(file_path, 'w') as f:
                 json.dump(data, f, indent=4)
-            self.current_session_name = session_name
-            QMessageBox.information(self, "Session", f"Session saved successfully to {file_path}")
+            self.statusBar().showMessage(f"Session saved successfully to {file_path}", 5000)
             
     def delete_current_session(self):
-        """Delete the currently selected session"""
+        """Delete the currently loaded session"""
         if self.current_session_name:
             result = QMessageBox.question(self, "Delete Session", f"Are you sure you want to delete the '{self.current_session_name}' session?", QMessageBox.Yes | QMessageBox.No)
             if result == QMessageBox.Yes:
                 session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
                 if self.session_manager.delete_session(self.current_session_name):
-                    QMessageBox.information(self, "Session Deleted", f"The '{self.current_session_name}' session has been deleted.")
                     self.current_session_name = None
+                    self.statusBar().showMessage(f"The '{self.current_session_name}' session has been deleted.", 5000)
                 else:
                     QMessageBox.warning(self, "Delete Error", f"Failed to delete the '{self.current_session_name}' session.")
         else:
-            QMessageBox.information(self, "Information", "No session selected for deletion.")
+            self.statusBar().showMessage("No session selected for deletion.", 5000)
             
     def rename_current_session(self):
         """Rename the currently selected session"""
@@ -583,29 +549,32 @@ class MainWindow(QMainWindow):
             new_name, ok = QInputDialog.getText(self, "Rename Session", "Enter new name for the session:", text=self.current_session_name)
             if ok and new_name:
                 if self.session_manager.rename_session(self.current_session_name, new_name):
-                    QMessageBox.information(self, "Session Renamed", f"The session has been renamed to '{new_name}'.")
                     self.current_session_name = new_name
+                    self.statusBar().showMessage(f"Session renamed to '{new_name}'.", 5000)
                 else:
                     QMessageBox.warning(self, "Rename Error", f"Failed to rename the session to '{new_name}'.")
         else:
-            QMessageBox.information(self, "Information", "No session selected for renaming.")
+            self.statusBar().showMessage("No session selected for renaming.", 5000)
+
+    
             
     def update_session_info(self):
-        if self.current_session_name:
-            self.session_info_label.setText("Refreshing...")
-            session_info = self.session_manager.load_session(self.current_session_name)
-            if session_info:
-                game_count = len(session_info['games'])
-                stats = session_info['stats']
-                total_swaps = stats['total_swaps']
-                total_time = self.format_time(stats['total_time'])
-                self.session_info_label.setText(f"Session: {self.current_session_name} | Games: {game_count} | Total Swaps: {total_swaps} | Total Time: {total_time}")
+        """Update session info label with session details"""
+        if hasattr(self, 'session_info_label'):
+            if self.current_session_name:
+                session_info = self.session_manager.load_session(self.current_session_name)
+                if session_info:
+                    games_count = len(session_info['games'])
+                    stats = session_info['stats'][0]
+                    swaps_count = stats.get('total_swaps', 0)
+                    time_total = self.format_time(stats.get('total_time', 0))
+                    self.session_info_label.setText(
+                        f"Session: {self.current_session_name} | Games: {games_count} | Swaps: {swaps_count} | Time: {time_total}")
+                else:
+                    self.session_info_label.setText(f"Failed to load {self.current_session_name}")
             else:
-                self.session_info_label.setText(f"Session: {self.current_session_name} | Failed to load")
-        else:
-            self.session_info_label.setText("Load a session to view details")
-                           
-                
+                self.session_info_label.setText("Load a session to view details")
+
             
     def apply_new_config(self):
         # Extract and validate interval settings
@@ -619,7 +588,7 @@ class MainWindow(QMainWindow):
             self.config_manager.save_config({'min_shuffle_interval': int(new_min_interval),
                                              'max_shuffle_interval': int(new_max_interval)})
             self.load_config()  # Reload configuration to apply changes
-            QMessageBox.information(self, "Success", "Configuration updated successfully.")
+            self.statusBar().showMessage("Configuration updated successfully.", 5000)
         else:
             QMessageBox.warning(self, "Invalid Input", message)
             
@@ -658,34 +627,23 @@ class MainWindow(QMainWindow):
         return tab
 
     def update_stats_display(self):
-        game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
+        if hasattr(self, 'total_swaps_label'):
+            game_stats, total_swaps, total_time = self.game_manager.stats_tracker.get_stats()
+            real_time_total = total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
 
-        # Calculate the real-time total shuffling time
-        real_time_total = total_shuffling_time
-        if self.game_manager.current_game:
-            # If a game is currently active, add the time elapsed since the last recorded start time
-            elapsed_time = time.time() - self.game_manager.stats_tracker.start_time
-            real_time_total += elapsed_time
+            self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
+            self.total_time_label.setText(f"Total Time: {self.format_time(real_time_total)}")
 
-        # Update the total stats labels
-        self.total_swaps_label.setText(f"Total Swaps: {total_swaps}")
-        self.total_time_label.setText(f"Total Time: {self.format_time(real_time_total)}")
+            current_game = self.game_manager.current_game
+            if current_game and current_game in game_stats:
+                current_game_stats = game_stats[current_game]
+                self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
+                self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_stats['time_spent'] + (time.time() - self.game_manager.stats_tracker.start_time))}")
+            else:
+                self.current_game_swaps_label.setText("Current Game Swaps: 0")
+                self.current_game_time_label.setText("Current Game Time: 00:00:00")
 
-        # Check if there's a current game and update its stats
-        current_game = self.game_manager.current_game
-        if current_game and current_game in game_stats:
-            # If a game is currently active, retrieve and display its stats
-            current_game_stats = game_stats[current_game]
-            self.current_game_swaps_label.setText(f"Current Game Swaps: {current_game_stats['swaps']}")
-
-            # Calculate elapsed time since the current game started
-            current_game_time = (time.time() - self.game_manager.stats_tracker.start_time
-                                if self.game_manager.stats_tracker.start_time else 0) + current_game_stats['time_spent']
-            self.current_game_time_label.setText(f"Current Game Time: {self.format_time(current_game_time)}")
-        else:
-            # If no game is active, reset the current game stats labels
-            self.current_game_swaps_label.setText("Current Game Swaps: 0")
-            self.current_game_time_label.setText("Current Game Time: 00:00:00")
+            self.update_session_info()
 
     def format_time(self, seconds):
         # Method to format seconds into hh:mm:ss
@@ -693,13 +651,23 @@ class MainWindow(QMainWindow):
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
+    def load_default_session(self):
+        """Load the default session"""
+        self.current_session_name = 'Default Session'
+        self.game_manager.load_games(self.session_manager.get_session_info('Default Session')['games'])
+        self.refresh_game_list()
+        self.update_session_info()
+        self.statusBar().showMessage("Default session loaded successfully.", 5000)
 
 
-
-
-
-
-
+    def create_default_session(self):
+        """Creates a default session if one doesn't already exist, or loads it if it already exists"""
+        if os.path.exists('sessions/Default Session.json'):
+            self.load_default_session()
+        else:
+            self.session_manager.save_session('Default Session', self.game_manager.games, self.game_manager.stats_tracker.get_stats(), {}, 'sessions/Default Session.json')
+            self.current_session_name = 'Default Session'
+            self.update_session_info()
 
     def create_twitch_integration_tab(self):
         # Placeholder for Twitch Integration tab content

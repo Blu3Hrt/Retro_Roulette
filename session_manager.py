@@ -9,10 +9,10 @@ class SessionManager:
     def save_session(self, name, games, stats, save_states, file_path):
         """Save a session to disk."""
         session_data = {
+            'name': name,
             'games': games,
             'stats': stats,
             'save_states': save_states,
-            'date_saved': datetime.now().isoformat()
         }
         file_path = os.path.join(self.directory, f"{name}.json")
         with open(file_path, 'w') as file:
@@ -85,3 +85,10 @@ class SessionManager:
             return "Session file not found."
         except json.JSONDecodeError:
             return "Error reading session data."
+ 
+    def session_exists(self, session_name):
+        session_file = os.path.join(self.directory, f"{session_name}.json")
+        return os.path.isfile(session_file)
+    
+    def get_default_session_path(self):
+        return os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions", "Default Session.json")

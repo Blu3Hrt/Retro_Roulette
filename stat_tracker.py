@@ -27,3 +27,6 @@ class StatsTracker:
 
     def get_stats(self):
         return self.game_stats, self.total_swaps, self.total_shuffling_time
+
+
+

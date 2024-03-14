@@ -63,3 +63,4 @@ class GameManager:
     def get_current_games(self):
         # Assuming 'games' is a dictionary of game data keyed by something like file paths
         return self.games
+    
