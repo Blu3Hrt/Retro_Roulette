@@ -4,16 +4,18 @@ from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
 from session_manager import SessionManager
+from ui.style import Style
 import Python_Client
 import psutil
 
-import os, random, subprocess, time
+from datetime import datetime
+import os, random, subprocess, time, json, sys
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.resize(600, 600)
         self.setWindowTitle("Retro Roulette")
-        self.setGeometry(100, 100, 800, 600)  # TODAdjust size as needed
 
         # Create Tab Widget
         self.tab_widget = QTabWidget(self)
@@ -21,18 +23,22 @@ class MainWindow(QMainWindow):
 
         self.game_manager = GameManager()
         self.config_manager = ConfigManager()
-        self.session_manager = SessionManager() 
+        self.session_manager = SessionManager()
+        self.style_setter = Style() 
         self.config = self.config_manager.load_config()              
         self.current_session_name = 'Default Session'  # Initialize with None or a default session name
         # Initialize tabs
-        self.init_tabs()  
+        self.init_tabs()
+        self.init_ui()  
         self.refresh_game_list()
         self.update_session_info()
         self.stats_timer = QTimer(self)
         self.stats_timer.timeout.connect(self.update_stats_display)
-        self.stats_timer.start(1000)                    
+        self.stats_timer.start(1000)    
         
      
+    def init_ui(self):
+        Style.set_dark_style(self)
         
                       
 
@@ -141,7 +147,12 @@ class MainWindow(QMainWindow):
             self.game_details_label.setText("Select a game to view details")    
 
     def add_games(self):
-        file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", "", 
+        app_root = os.path.dirname(sys.modules['__main__'].__file__)
+        games_dir = os.path.join(app_root, "games")
+        if not os.path.exists(games_dir):
+            os.makedirs(games_dir)
+
+        file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", games_dir, 
                                                      "Game Files (*.nes *.snes *.gbc *.gba *.md *.nds)")
         added_any = False
         for file_name in file_names:
@@ -154,9 +165,17 @@ class MainWindow(QMainWindow):
 
         if added_any:
             self.refresh_game_list()
+            self.update_session_info()
+            
 
     def add_games_from_directory(self):
-        directory = QFileDialog.getExistingDirectory(self, "Select Directory")
+        app_root = os.path.dirname(sys.modules['__main__'].__file__)
+        games_dir = os.path.join(app_root, "games")
+        if not os.path.exists(games_dir):
+            os.makedirs(games_dir)
+
+        directory = QFileDialog.getExistingDirectory(self, "Select Directory", games_dir, 
+                                                      QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
         if directory:
             added_any = False
             for file in os.listdir(directory):
@@ -170,6 +189,7 @@ class MainWindow(QMainWindow):
 
             if added_any:
                 self.refresh_game_list()
+                self.update_session_info()
 
     def remove_selected_game(self):
         selected_items = self.game_list.selectedItems()
@@ -260,21 +280,12 @@ class MainWindow(QMainWindow):
 
     def launch_bizhawk(self):
         # Call the method to execute BizHawk with the Lua script
-        self.execute_bizhawk_script()
+        try:
+            self.execute_bizhawk_script()
+        except Exception as e:
+            print(f"Exception launching BizHawk: {e}")
+            
 
-        # Additional logic if needed, such as verifying launch success
-        # Check if BizHawk is running and the Lua script is active
-        self.is_bizhawk_running = False
-        for proc in psutil.process_iter():
-            try:
-                if proc.name() == "BizHawk.exe" and "bizhawk_server.lua" in proc.cmdline():
-                    self.is_bizhawk_running = True
-                    break
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
-
-        if not self.is_bizhawk_running:
-            QMessageBox.warning(self, "Error", "Failed to launch BizHawk.")
 
     def start_shuffle(self):
         if not self.is_shuffling:
@@ -382,14 +393,13 @@ class MainWindow(QMainWindow):
         except FileNotFoundError:
             QMessageBox.warning(self, "Error", "BizHawk executable not found.")
 
-    def get_state_path(self, game_path):
-        game_id = os.path.basename(game_path).split('.')[0]
+    def get_state_path(self, game_file):
+        """Return the path to the save state file for a given game file."""
 
-        # Use the current session's unique name as the session identifier
-        session_name = self.current_session_name
-
-        state_path = f"save_states/{session_name}/{game_id}.state"
-        return state_path
+        session_dir = os.path.join('save_states', self.current_session_name)
+        game_id = os.path.splitext(os.path.basename(game_file))[0]
+        state_file = f"{game_id}.state"
+        return os.path.join(session_dir, state_file)
     
     
 
@@ -423,15 +433,17 @@ class MainWindow(QMainWindow):
         save_config_button.clicked.connect(self.save_configuration)
         layout.addWidget(save_config_button)        
 
-        # Dropdown to select a session
-        self.session_dropdown = QComboBox()
-        self.session_dropdown.addItems(self.session_manager.get_saved_sessions())
-        layout.addWidget(self.session_dropdown)
-
+        # Load Configuration Button
+        load_config_button = QPushButton("Load Configuration")
+        load_config_button.clicked.connect(self.load_configuration)
+        layout.addWidget(load_config_button)
+        
+        
+        
         self.session_info_label = QLabel("Select a session to view details")
         layout.addWidget(self.session_info_label)
 
-        self.session_dropdown.currentIndexChanged.connect(self.update_session_info)        
+               
 
         # Save Session Button
         save_session_button = QPushButton("Save Current Session")
@@ -445,12 +457,12 @@ class MainWindow(QMainWindow):
 
         # Button for renaming the selected session
         rename_session_button = QPushButton("Rename Selected Session")
-        rename_session_button.clicked.connect(self.rename_selected_session)
+        rename_session_button.clicked.connect(self.rename_current_session)
         layout.addWidget(rename_session_button)
         
         # Button to delete the selected session
         delete_session_button = QPushButton("Delete Selected Session")
-        delete_session_button.clicked.connect(self.delete_selected_session)
+        delete_session_button.clicked.connect(self.delete_current_session)
         layout.addWidget(delete_session_button)      
 
         return tab
@@ -460,16 +472,6 @@ class MainWindow(QMainWindow):
         if path:
             self.bizhawk_path_input.setText(path)
 
-    def delete_selected_session(self):
-        selected_session = self.session_dropdown.currentText()
-        if selected_session:
-            if self.session_manager.delete_session(selected_session):
-                QMessageBox.information(self, "Session Deleted", f"Session '{selected_session}' deleted successfully.")
-                self.session_dropdown.removeItem(self.session_dropdown.currentIndex())
-            else:
-                QMessageBox.warning(self, "Delete Error", "Could not delete the selected session.")
-        else:
-            QMessageBox.warning(self, "No Selection", "No session selected for deletion.")
 
     def save_configuration(self):
         # Collect configuration data from UI elements
@@ -502,6 +504,14 @@ class MainWindow(QMainWindow):
         self.config_manager.save_config(config_data)
         QMessageBox.information(self, "Success", "Configuration saved successfully.") 
 
+    def load_configuration(self):
+        # Load configurations using ConfigManager
+        self.config = self.config_manager.load_config()
+        self.bizhawk_path_input.setText(self.config.get('bizhawk_path', ''))
+        self.min_interval_input.setText(str(self.config.get('min_shuffle_interval', '30')))
+        self.max_interval_input.setText(str(self.config.get('max_shuffle_interval', '60')))
+        QMessageBox.information(self, "Success", "Configuration loaded successfully.")
+
     def refresh_game_list(self):
         # Assuming you have a QListWidget or similar for displaying the game list
         self.game_list.clear()  # Clear the current list
@@ -516,44 +526,86 @@ class MainWindow(QMainWindow):
         self.config = self.config_manager.load_config()
         
     def load_selected_session(self):
-        selected_session = self.session_dropdown.currentText()
-        session_data = self.session_manager.load_session(selected_session)
-        if session_data:
-            self.current_session_name = selected_session  # Set the current session name here           
-            self.game_manager.load_games(session_data['games'])
-            self.refresh_game_list()         
-            # You would also handle the restoration of save states here
-            QMessageBox.information(self, "Session Loaded", f"Session '{selected_session}' has been loaded successfully.")
-        else:
-            QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
+        sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
+        file_dialog = QFileDialog(directory=sessions_dir)
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        file_dialog.setNameFilter("JSON files (*.json)")
+        file_dialog.setDefaultSuffix("*.json")
+        if file_dialog.exec_():
+            session_path = file_dialog.selectedFiles()[0]
+            try:
+                with open(session_path, 'r') as f:
+                    session_data = json.load(f)
+                    self.current_session_name = os.path.basename(session_path)
+                    self.game_manager.load_games(session_data['games'])
+                    self.refresh_game_list()
+                    QMessageBox.information(self, "Session Loaded", f"Session '{self.current_session_name}' has been loaded successfully.")
+            except:
+                QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
 
     def save_current_session(self):
-        session_name, ok = QInputDialog.getText(self, "Save Session", "Enter a name for the session:")
-        if ok and session_name:
-            games = self.game_manager.games  # If this is how you access the current games
-            save_states = {}  # Placeholder for save states logic
-            stats = self.game_manager.stats_tracker.get_stats()  # or however you access the stats
-            self.session_manager.save_session(session_name, games, stats, save_states)
-            QMessageBox.information(self, "Session", f"Session '{session_name}' saved successfully")
-            self.current_session_name = session_name  # Set the current session name here
-            self.session_dropdown.addItem(session_name)  # Update the dropdown  
+        """Save the current session to a JSON file"""
+        file_name = f"session_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.json"
+        sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
+
+        file_dialog = QFileDialog()
+        file_dialog.setDirectory(sessions_dir)
+        file_dialog.setFileMode(QFileDialog.AnyFile)
+        file_dialog.setAcceptMode(QFileDialog.AcceptSave)
+        file_dialog.selectFile(file_name)
+        file_dialog.setDefaultSuffix("*.json")
+        if file_dialog.exec():
+            file_path = file_dialog.selectedFiles()[0]
+            session_name = os.path.basename(file_path).split('.')[0]
+            data = {'name': session_name, 'games': self.game_manager.games, 'stats': self.game_manager.stats_tracker.get_stats()}
+            with open(file_path, 'w') as f:
+                json.dump(data, f, indent=4)
+            self.current_session_name = session_name
+            QMessageBox.information(self, "Session", f"Session saved successfully to {file_path}")
             
-    def rename_selected_session(self):
-        selected_session = self.session_dropdown.currentText()
-        if selected_session:
-            new_name, ok = QInputDialog.getText(self, "Rename Session", "Enter new name for the session:")
-            if ok and new_name:
-                success = self.session_manager.rename_session(selected_session, new_name)
-                if success:
-                    self.update_session_dropdown()  # Update the session list
-                    QMessageBox.information(self, "Renamed", f"'{selected_session}' renamed to '{new_name}'.")
+    def delete_current_session(self):
+        """Delete the currently selected session"""
+        if self.current_session_name:
+            result = QMessageBox.question(self, "Delete Session", f"Are you sure you want to delete the '{self.current_session_name}' session?", QMessageBox.Yes | QMessageBox.No)
+            if result == QMessageBox.Yes:
+                session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+                if self.session_manager.delete_session(self.current_session_name):
+                    QMessageBox.information(self, "Session Deleted", f"The '{self.current_session_name}' session has been deleted.")
+                    self.current_session_name = None
                 else:
-                    QMessageBox.warning(self, "Rename Error", "Could not rename the selected session.")
-                    
+                    QMessageBox.warning(self, "Delete Error", f"Failed to delete the '{self.current_session_name}' session.")
+        else:
+            QMessageBox.information(self, "Information", "No session selected for deletion.")
+            
+    def rename_current_session(self):
+        """Rename the currently selected session"""
+        if self.current_session_name:
+            new_name, ok = QInputDialog.getText(self, "Rename Session", "Enter new name for the session:", text=self.current_session_name)
+            if ok and new_name:
+                if self.session_manager.rename_session(self.current_session_name, new_name):
+                    QMessageBox.information(self, "Session Renamed", f"The session has been renamed to '{new_name}'.")
+                    self.current_session_name = new_name
+                else:
+                    QMessageBox.warning(self, "Rename Error", f"Failed to rename the session to '{new_name}'.")
+        else:
+            QMessageBox.information(self, "Information", "No session selected for renaming.")
+            
     def update_session_info(self):
-        selected_session = self.session_dropdown.currentText()
-        session_info = self.session_manager.get_session_info(selected_session)
-        self.session_info_label.setText(session_info)                    
+        if self.current_session_name:
+            self.session_info_label.setText("Refreshing...")
+            session_info = self.session_manager.load_session(self.current_session_name)
+            if session_info:
+                game_count = len(session_info['games'])
+                stats = session_info['stats']
+                total_swaps = stats['total_swaps']
+                total_time = self.format_time(stats['total_time'])
+                self.session_info_label.setText(f"Session: {self.current_session_name} | Games: {game_count} | Total Swaps: {total_swaps} | Total Time: {total_time}")
+            else:
+                self.session_info_label.setText(f"Session: {self.current_session_name} | Failed to load")
+        else:
+            self.session_info_label.setText("Load a session to view details")
+                           
+                
             
     def apply_new_config(self):
         # Extract and validate interval settings
@@ -571,23 +623,22 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "Invalid Input", message)
             
-    def validate_intervals(self, min_interval, max_interval):
-        # Try converting intervals to integers and validate
+    def validate_intervals(self, min_val, max_val):
+        """Validate shuffle interval settings"""
         try:
-            min_interval = int(min_interval)
-            max_interval = int(max_interval)
+            min_interval = int(min_val)
+            max_interval = int(max_val)
 
             if min_interval <= 0 or max_interval <= 0:
                 return False, "Intervals must be positive numbers."
-
-            if min_interval > max_interval:
+            elif min_interval > max_interval:
                 return False, "Minimum interval cannot be greater than maximum interval."
 
             return True, "Valid intervals."
-        
+
         except ValueError:
-            # Raised if conversion to int fails
-            return False, "Intervals must be numeric."                            
+            return False, "Intervals must be numeric."
+
 
     def create_stats_tab(self):
         tab = QWidget()
