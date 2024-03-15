@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
 from session_manager import SessionManager
+from stat_tracker import StatsTracker
 from ui.style import Style
 import Python_Client
 import psutil
@@ -24,6 +25,7 @@ class MainWindow(QMainWindow):
         self.game_manager = GameManager()
         self.config_manager = ConfigManager()
         self.session_manager = SessionManager()
+        self.stat_tracker = StatsTracker()
         self.style_setter = Style() 
         self.config = self.config_manager.load_config()              
         self.current_session_name = None  # Initialize with None or a default session name
@@ -286,7 +288,7 @@ class MainWindow(QMainWindow):
         return tab
 
     def launch_bizhawk(self):
-        # Call the method to execute BizHawk with the Lua script
+        # TODO: Prevent BizHawk from launching if it is already running.
         try:
             self.execute_bizhawk_script()
         except Exception as e:
@@ -630,7 +632,7 @@ class MainWindow(QMainWindow):
                     session_data = json.load(f)
                     self.current_session_name = os.path.basename(session_path)
                     self.game_manager.load_games(session_data['games'])
-                    self.game_manager.load_stats(session_data['stats'])
+                    stats = self.stat_tracker.get_stats()
                     self.game_manager.load_save_states(session_data['save_states'])
                     self.refresh_game_list()
                     self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)

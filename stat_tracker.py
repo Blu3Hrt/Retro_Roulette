@@ -34,3 +34,4 @@ class StatsTracker:
         hours, remainder = divmod(int(self.total_shuffling_time), 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
