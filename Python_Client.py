@@ -1,11 +1,14 @@
 import socket
 import os
 
+sock = None
+
 def send_command(command):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    global sock
+    if sock is None or sock.fileno() == -1:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect(("127.0.0.1", 65432))  # Ensure IP and port match Lua script
-        sock.sendall((command + "\n").encode())  # Append newline to command
-        sock.close()  # Closes after sending a command
+    sock.sendall((command + "\n").encode())  # Append newline to command
 
 def to_absolute_path(relative_path):
     return os.path.abspath(relative_path)

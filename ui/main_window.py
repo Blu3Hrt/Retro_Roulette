@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QComboBox, QMenu
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QMenu
 from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
@@ -7,10 +7,8 @@ from session_manager import SessionManager
 from stat_tracker import StatsTracker
 from ui.style import Style
 import Python_Client
-import psutil
 
-from datetime import datetime, timedelta
-import os, random, subprocess, time, json, sys
+import os, random, subprocess, time, json, sys, logging
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -308,10 +306,9 @@ class MainWindow(QMainWindow):
             self.is_shuffling = True
             self.shuffle_games()
         #TODO: Add logic to prevent starting shuffle if it is already active
-        #TODO: Add logic to prevent starting shuffle if BizHawk is not running
+        #TODO: Add logic to prevent starting shuffle if BizHawk/EmuHawk process is not running
 
     def determine_shuffle_interval(self):
-        # Placeholder: Determine the shuffle interval based on configuration
         min_interval = self.config_manager.config.get('min_shuffle_interval', 30)
         max_interval = self.config_manager.config.get('max_shuffle_interval', 60)
         return random.randint(min_interval, max_interval) * 1000  # in milliseconds
@@ -325,29 +322,34 @@ class MainWindow(QMainWindow):
             self.is_shuffling = True
             self.shuffle_games()
 
+
     def shuffle_games(self):
-        # Skip shuffling if there are no games or shuffling is disabled
+        # Skip shuffling if there are no games or shuffling is disabled 
         if not self.is_shuffling or not self.game_manager.games:
             return
 
         # Remove current game from available games
-        available_games = list(self.game_manager.games.keys())
+        available_games = list(self.game_manager.games.keys())  
         if self.current_game_path and len(available_games) > 1:
             available_games.remove(self.current_game_path)
 
-        # Select a random game and switch to it
-        next_game_path = random.choice(available_games)
-        next_game_name = self.game_manager.games[next_game_path]['name']
-        self.game_manager.switch_game(next_game_name)
+        try:
+            # Select a random game and switch to it
+            next_game_path = random.choice(available_games)  
+            next_game_name = self.game_manager.games[next_game_path]['name']
+            self.game_manager.switch_game(next_game_name)
 
-        # Save and load game state
-        if self.current_game_path:
-            self.save_game_state(self.current_game_path)
+            # Save and load game state
+            if self.current_game_path:
+                self.save_game_state(self.current_game_path)
+                self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
+            self.load_game(next_game_path)
+            self.load_game_state(next_game_path)
             self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
-        self.load_game(next_game_path)
-        self.load_game_state(next_game_path)
-        self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
-        self.update_session_info()
+            self.update_session_info()
+
+        except Exception as e:
+            logging.error("Error shuffling games: " + str(e))
 
         # Update current game path
         self.current_game_path = next_game_path
@@ -355,7 +357,11 @@ class MainWindow(QMainWindow):
         # Schedule next shuffle
         min_interval, max_interval = self.config.get('min_shuffle_interval', 30), self.config.get('max_shuffle_interval', 60)
         shuffle_interval = random.randint(min_interval, max_interval)
+        logging.info("Scheduling next shuffle in %d seconds", shuffle_interval)
         QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)
+
+
+
 
     def ensure_directory_exists(self, state_path):
         directory = os.path.dirname(state_path)
@@ -370,17 +376,21 @@ class MainWindow(QMainWindow):
         Python_Client.save_state(state_path)  # Save the game state
 
     def load_game(self, game_path):
+        print(f"Loading game: {game_path}")  # Debugging line
         if not game_path:
             return
         # Call to Python client script to load the game
         Python_Client.load_rom(game_path)
 
     def load_game_state(self, game_path):
+        print(f"Loading game state: {game_path}")  # Debugging line
         state_file = self.get_state_path(game_path)
         self.ensure_directory_exists(state_file)
         if os.path.exists(state_file):
+            print(f"State file exists: {state_file}")  # Debugging line
             Python_Client.load_state(state_file)
         else:
+            print(f"State file does not exist: {state_file}")  # Debugging line
             self.save_game_state(game_path)
 
     def execute_bizhawk_script(self):
@@ -394,8 +404,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "BizHawk executable not found.")
 
     def get_state_path(self, game_file):
-        """Return the path to the save state file for a given game file."""
-
         session_dir = os.path.join('save_states', self.current_session_name)
         game_id = os.path.splitext(os.path.basename(game_file))[0]
         state_file = f"{game_id}.state"
@@ -407,6 +415,10 @@ class MainWindow(QMainWindow):
     def create_configuration_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        
+        #TODO add checkbox and logic to allow duplicate games in game list
+        #TODO add ui color customization options for text, background, and font
+        
 
         # Set up the BizHawk path input and button
         self.bizhawk_path_input = QLineEdit(self.config.get('bizhawk_path', ''))
@@ -428,8 +440,6 @@ class MainWindow(QMainWindow):
         load_config_button.clicked.connect(self.load_configuration)
         layout.addWidget(save_config_button)
         layout.addWidget(load_config_button)
-
-
 
         return tab
 
@@ -485,24 +495,6 @@ class MainWindow(QMainWindow):
         
 
 
-
-            
-    def apply_new_config(self):
-        # Extract and validate interval settings
-        new_min_interval = self.min_interval_input.text()
-        new_max_interval = self.max_interval_input.text()
-        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
-
-        # Validate and save the new configuration
-        valid, message = self.validate_intervals(new_min_interval, new_max_interval)
-        if valid:
-            self.config_manager.save_config({'min_shuffle_interval': int(new_min_interval),
-                                             'max_shuffle_interval': int(new_max_interval)})
-            self.load_config()  # Reload configuration to apply changes
-            self.statusBar().showMessage("Configuration updated successfully.", 5000)
-        else:
-            QMessageBox.warning(self, "Invalid Input", message)
-            
     def validate_intervals(self, min_val, max_val):
         """Validate shuffle interval settings"""
         try:
@@ -690,21 +682,29 @@ class MainWindow(QMainWindow):
     def update_session_info(self):
         if self.current_session_name:
             session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
-            if os.path.exists(session_file):
-                with open(session_file, 'r') as file:
-                    session_data = json.load(file)
-                    game_count = len(session_data['games'])
-                    stats = session_data['stats']
-                    total_swaps = stats[1]
-                    total_time = stats[2]
-                    self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
-                                                    f"Games: {game_count}\n" + 
-                                                    f"Swaps: {total_swaps}\n" + 
-                                                    f"Time: {self.format_time(total_time)}")
-            else:
+            try:
+                if os.path.exists(session_file):
+                    with open(session_file, 'r') as file:
+                        session_data = json.load(file)
+                        game_count = len(session_data['games'])
+                        stats = session_data['stats']
+                        total_swaps = stats[1]
+                        total_time = stats[2]
+                        self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
+                                                        f"Games: {game_count}\n" + 
+                                                        f"Swaps: {total_swaps}\n" + 
+                                                        f"Time: {self.format_time(total_time)}")
+                else:
+                    raise FileNotFoundError
+            except FileNotFoundError:
                 self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
                                                 f"Games: 0\n" + 
                                                 f"Swaps: 0\n" + 
                                                 f"Time: 00:00:00")
+            except json.JSONDecodeError:
+                QMessageBox.warning(self, "Load Error", "Failed to load the session file. It may be corrupted.")
+            except:
+                QMessageBox.warning(self, "Unexpected Error", "An unexpected error occurred while loading the session.")
         else:
-            self.session_info_label.setText("Load a session to view details")   
+            self.session_info_label.setText("Load a session to view details")
+

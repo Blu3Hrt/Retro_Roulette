@@ -82,38 +82,38 @@ class SessionManager:
     def get_default_session_path(self):
         return os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions", "Default Session.json")
     
-    def get_total_swaps(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'stats' in session_info:
-            return session_info['stats'].get('total_swaps', 0)
-        return 0
+    # def get_total_swaps(self, session_name):
+    #     session_info = self.get_session_info(session_name)
+    #     if session_info and 'stats' in session_info:
+    #         return session_info['stats'].get('total_swaps', 0)
+    #     return 0
     
-    def get_total_time(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'stats' in session_info:
-            return session_info['stats'].get('total_time', 0)
-        return 0
+    # def get_total_time(self, session_name):
+    #     session_info = self.get_session_info(session_name)
+    #     if session_info and 'stats' in session_info:
+    #         return session_info['stats'].get('total_time', 0)
+    #     return 0
 
-    def get_total_games(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return len(session_info['games'])
-        return 0
+    # def get_total_games(self, session_name):
+    #     session_info = self.get_session_info(session_name)
+    #     if session_info and 'games' in session_info:
+    #         return len(session_info['games'])
+    #     return 0
 
-    def get_game_names(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return list(session_info['games'].keys())
-        return []
+    # def get_game_names(self, session_name):
+    #     session_info = self.get_session_info(session_name)
+    #     if session_info and 'games' in session_info:
+    #         return list(session_info['games'].keys())
+    #     return []
 
-    def get_game_times(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return [game.get('time_played', 0) for game in session_info['games'].values()]
-        return []
+    # def get_game_times(self, session_name):
+    #     session_info = self.get_session_info(session_name)
+    #     if session_info and 'games' in session_info:
+    #         return [game.get('time_played', 0) for game in session_info['games'].values()]
+    #     return []
 
-    def get_game_swaps(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return [game.get('swaps', 0) for game in session_info['games'].values()]
-        return []
+    # def get_game_swaps(self, session_name):
+    #     session_info = self.get_session_info(session_name)
+    #     if session_info and 'games' in session_info:
+    #         return [game.get('swaps', 0) for game in session_info['games'].values()]
+    #     return []

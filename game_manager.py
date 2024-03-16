@@ -11,10 +11,16 @@ class GameManager:
         self.save_states = {}
 
     def switch_game(self, game_name):
-        if self.current_game:
-            self.stats_tracker.end_game(self.current_game)
-        self.current_game = game_name
-        self.stats_tracker.start_game(game_name)
+        try:
+            if self.current_game:
+                self.stats_tracker.end_game(self.current_game)
+            self.current_game = game_name
+            self.stats_tracker.start_game(game_name)
+        except Exception as e:
+            print("Error switching game:", e)
+            raise
+
+
 
     def load_games(self, game_data):
 
@@ -63,7 +69,5 @@ class GameManager:
             if game_path in self.games:
                 self.save_states[game_path] = save_state
 
-    def get_current_games(self):
-        # Assuming 'games' is a dictionary of game data keyed by something like file paths
-        return self.games
+
     
