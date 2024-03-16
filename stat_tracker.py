@@ -30,4 +30,8 @@ class StatsTracker:
     def get_stats(self):
         return self.game_stats, self.total_swaps, self.total_shuffling_time
 
-
+    def reset_stats(self):
+        self.game_stats = {}
+        self.total_swaps = 0
+        self.total_shuffling_time = 0
+        self.start_time = None

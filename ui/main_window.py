@@ -9,6 +9,7 @@ from ui.style import Style
 import Python_Client
 
 import os, random, subprocess, time, json, sys, logging
+import psutil
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -286,13 +287,22 @@ class MainWindow(QMainWindow):
         return tab
 
     def launch_bizhawk(self):
-        # TODO: Prevent BizHawk from launching if it is already running.
+        if self.is_bizhawk_process_running():
+            print("BizHawk is already running.")
+            return
+
         try:
             self.execute_bizhawk_script()
         except Exception as e:
             print(f"Exception launching BizHawk: {e}")
             
+    def is_bizhawk_process_running(self):
+        # Check if BizHawk/EmuHawk process is running
+        for proc in psutil.process_iter(['name']):
+            if proc.info['name'] == 'EmuHawk.exe' or proc.info['name'] == 'BizHawk.exe':
+                return True
 
+        return False
 
     def start_shuffle(self):
         if not self.is_shuffling:
@@ -303,10 +313,21 @@ class MainWindow(QMainWindow):
             # Convert to milliseconds and ensure min_interval is not greater than max_interval
             self.shuffle_interval = random.randint(min(min_interval, max_interval), max(max_interval, min_interval)) * 1000
             
-            self.is_shuffling = True
-            self.shuffle_games()
-        #TODO: Add logic to prevent starting shuffle if it is already active
-        #TODO: Add logic to prevent starting shuffle if BizHawk/EmuHawk process is not running
+            # Check if BizHawk/EmuHawk process is running
+            if self.is_bizhawk_process_running():
+                self.is_shuffling = True
+                # Reset stats only if it's a new session
+                if not self.is_same_session:
+                    self.reset_stats()
+                self.shuffle_games()
+            else:
+                print("BizHawk/EmuHawk process is not running. Cannot start shuffle.")
+        else:
+            # Shuffle is already active, prevent starting another shuffle
+            print("Shuffle is already active.")
+            
+    def is_same_session(self):
+        return self.session_name == self.config_manager.config.get('session_name', 'Default Session')
 
     def determine_shuffle_interval(self):
         min_interval = self.config_manager.config.get('min_shuffle_interval', 30)
@@ -327,7 +348,6 @@ class MainWindow(QMainWindow):
         # Skip shuffling if there are no games or shuffling is disabled 
         if not self.is_shuffling or not self.game_manager.games:
             return
-
         # Remove current game from available games
         available_games = list(self.game_manager.games.keys())  
         if self.current_game_path and len(available_games) > 1:
@@ -359,6 +379,10 @@ class MainWindow(QMainWindow):
         shuffle_interval = random.randint(min_interval, max_interval)
         logging.info("Scheduling next shuffle in %d seconds", shuffle_interval)
         QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)
+
+        # Check if BizHawk process is still running
+        if not self.is_bizhawk_process_running():
+            self.pause_shuffle()
 
 
 
