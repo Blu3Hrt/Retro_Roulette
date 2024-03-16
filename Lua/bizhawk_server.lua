@@ -39,7 +39,7 @@ function receiveCommand()
         if command then
             print("Received command:", command)
             return command
-        elseif err and err ~= "timeout" then
+        elseif err and err ~= "timeout" and err ~= "closed" then
             print("Error receiving command:", err)
             connectionSocket:close()
             connectionSocket = nil
