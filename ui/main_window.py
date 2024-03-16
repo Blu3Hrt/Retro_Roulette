@@ -581,7 +581,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
 
         # Add a label to display session info
-        self.session_info_label = QLabel("Select a session to view details")
+        self.session_info_label = QLabel("Load a session to view details")
         layout.addWidget(self.session_info_label)
 
         # Set up the save, load, rename, and delete session buttons
@@ -688,17 +688,23 @@ class MainWindow(QMainWindow):
         return os.path.join(self.session_manager.directory, session_name)
             
     def update_session_info(self):
-        # Implement the code for the TODO comment
         if self.current_session_name:
-            session_info = self.session_manager.load_session(self.current_session_name)
-            if session_info:
-                games = session_info['games']
-                game_count = len(games)
-                completed_count = len([g for g in games.values() if g.get('completed', False)])
-                total_time = sum([g.get('time_played', 0) for g in games.values()])
-                total_playtime = timedelta(seconds=total_time)
-                self.session_info_label.setText(f"Session: {self.current_session_name}\nGames: {game_count}\nCompleted: {completed_count}\nTotal Time: {str(total_playtime)}")
+            session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+            if os.path.exists(session_file):
+                with open(session_file, 'r') as file:
+                    session_data = json.load(file)
+                    game_count = len(session_data['games'])
+                    stats = session_data['stats']
+                    total_swaps = stats[1]
+                    total_time = stats[2]
+                    self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
+                                                    f"Games: {game_count}\n" + 
+                                                    f"Swaps: {total_swaps}\n" + 
+                                                    f"Time: {self.format_time(total_time)}")
             else:
-                self.session_info_label.setText("Select a session to view details")
+                self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
+                                                f"Games: 0\n" + 
+                                                f"Swaps: 0\n" + 
+                                                f"Time: 00:00:00")
         else:
-            self.session_info_label.setText("Select a session to view details")            
+            self.session_info_label.setText("Load a session to view details")   
