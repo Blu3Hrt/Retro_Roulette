@@ -714,21 +714,24 @@ class MainWindow(QMainWindow):
                         stats = session_data['stats']
                         total_swaps = stats[1]
                         total_time = stats[2]
-                        self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
-                                                        f"Games: {game_count}\n" + 
-                                                        f"Swaps: {total_swaps}\n" + 
+                        self.session_info_label.setText(f"Session: {self.current_session_name}\n" +
+                                                        f"Games: {game_count}\n" +
+                                                        f"Swaps: {total_swaps}\n" +
                                                         f"Time: {self.format_time(total_time)}")
                 else:
                     raise FileNotFoundError
             except FileNotFoundError:
-                self.session_info_label.setText(f"Session: {self.current_session_name}\n" + 
-                                                f"Games: 0\n" + 
-                                                f"Swaps: 0\n" + 
-                                                f"Time: 00:00:00")
+                self.session_info_label.setText(f"Session: {self.current_session_name}\n" +
+                                                f"Games: 0\n" +
+                                                f"Swaps: 0\n" +
+                                                f"Time: 00:00:00\n" +
+                                                "Session file does not exist.")
             except json.JSONDecodeError:
                 QMessageBox.warning(self, "Load Error", "Failed to load the session file. It may be corrupted.")
             except:
-                QMessageBox.warning(self, "Unexpected Error", "An unexpected error occurred while loading the session.")
+                self.statusBar().showMessage("An unexpected error occurred while loading the session.", 5000)
+
         else:
             self.session_info_label.setText("Load a session to view details")
+
 
