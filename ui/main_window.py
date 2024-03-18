@@ -305,6 +305,21 @@ class MainWindow(QMainWindow):
         return False
 
     def start_shuffle(self):
+        # Load the current session data
+        session_data = self.session_manager.load_session(self.current_session_name)
+        
+        if session_data:
+            # Load the stats from the session into the stats tracker
+            game_stats = session_data.get('stats', [{}])[0]  # The first element is the game stats dictionary
+            total_swaps = session_data.get('stats', [{}, 0])[1]  # The second element is the total swaps
+            total_shuffling_time = session_data.get('stats', [{}, 0, 0])[2]  # The third element is the total shuffling time
+
+            initial_stats = {
+                'game_stats': game_stats,
+                'total_swaps': total_swaps,
+                'total_shuffling_time': total_shuffling_time
+            }
+            self.game_manager.stats_tracker = StatsTracker(initial_stats)
         if not self.is_shuffling:
             # Read shuffle interval configurations
             min_interval = self.config.get('min_shuffle_interval', 30)
@@ -357,10 +372,10 @@ class MainWindow(QMainWindow):
             # Save and load game state
             if self.current_game_path:
                 self.save_game_state(self.current_game_path)
-                self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
+                self.update_and_save_session()
             self.load_game(next_game_path)
             self.load_game_state(next_game_path)
-            self.session_manager.save_session(self.current_session_name, self.game_manager.games, self.game_manager.stats_tracker.get_stats(), self.game_manager.save_states, self.get_session_path(self.current_session_name) + '.json')
+            self.update_and_save_session()
             self.update_session_info()
 
         except Exception as e:
@@ -730,3 +745,25 @@ class MainWindow(QMainWindow):
             self.session_info_label.setText("Load a session to view details")
 
 
+    def update_and_save_session(self):
+        # Gather the updated stats from the StatsTracker
+        current_game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
+
+        # Update the session data with the current stats
+        session_data = {
+            'name': self.current_session_name,
+            'games': self.game_manager.games,
+            'stats': [
+                current_game_stats,
+                total_swaps,
+                total_shuffling_time
+            ],
+            'save_states': self.game_manager.save_states
+        }
+
+        # Construct the file path for the session file using the directory attribute and session name
+        session_file_path = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+
+        # Use the SessionManager to save the session to disk
+        self.session_manager.save_session(self.current_session_name, session_data['games'], 
+                                        session_data['stats'], session_data['save_states'], session_file_path)
