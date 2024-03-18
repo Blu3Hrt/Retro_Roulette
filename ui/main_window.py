@@ -62,6 +62,8 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.create_shuffle_management_tab(), "Shuffle Management")
         self.tab_widget.addTab(self.create_configuration_tab(), "Configuration")
         self.tab_widget.addTab(self.create_stats_tab(), "Stats")
+        self.tab_widget.addTab(self.create_twitch_integration_tab(), "Twitch")
+
 
 
 
@@ -369,13 +371,15 @@ class MainWindow(QMainWindow):
 
     def launch_bizhawk(self):
         if self.is_bizhawk_process_running():
-            print("BizHawk is already running.")
+            QMessageBox.information(self, "BizHawk Running", "BizHawk is already running.")
+            # Optional: Bring BizHawk window to the front if possible
             return
-
+    
         try:
             self.execute_bizhawk_script()
         except Exception as e:
-            print(f"Exception launching BizHawk: {e}")
+            logging.error(f"Exception launching BizHawk: {e}")
+            QMessageBox.critical(self, "Launch Error", f"An error occurred while launching BizHawk: {e}")
             
     def is_bizhawk_process_running(self):
         # Check if BizHawk/EmuHawk process is running
@@ -386,44 +390,68 @@ class MainWindow(QMainWindow):
         return False
 
     def start_shuffle(self):
-        # Load the current session data
-        session_data = self.session_manager.load_session(self.current_session_name)
-        
-        if session_data:
-            # Load the stats from the session into the stats tracker
-            game_stats = session_data.get('stats', [{}])[0]  # The first element is the game stats dictionary
-            total_swaps = session_data.get('stats', [{}, 0])[1]  # The second element is the total swaps
-            total_shuffling_time = session_data.get('stats', [{}, 0, 0])[2]  # The third element is the total shuffling time
-
-            initial_stats = {
-                'game_stats': game_stats,
-                'total_swaps': total_swaps,
-                'total_shuffling_time': total_shuffling_time
-            }
-            self.game_manager.stats_tracker = StatsTracker(initial_stats)
-        if not self.is_shuffling:
-            # Read shuffle interval configurations
-            min_interval = self.config.get('min_shuffle_interval', 30)
-            max_interval = self.config.get('max_shuffle_interval', 60)
-            
-            # Convert to milliseconds and ensure min_interval is not greater than max_interval
-            self.shuffle_interval = random.randint(min(min_interval, max_interval), max(max_interval, min_interval)) * 1000
-            
-            # Check if BizHawk/EmuHawk process is running
-            if self.is_bizhawk_process_running():
-                self.is_shuffling = True
-                self.shuffle_games()
-            else:
-                print("BizHawk/EmuHawk process is not running. Cannot start shuffle.")
-        else:
-            # Shuffle is already active, prevent starting another shuffle
+        if self.is_shuffling:
             print("Shuffle is already active.")
+            return
 
+        if not self.current_session_name:
+            QMessageBox.warning(self, "No Session", "No current session is set. Please load a session first.")
+            return
+
+        try:
+            session_data = self.session_manager.load_session(self.current_session_name)
+            if session_data:
+                # Make sure session_data has all the required fields
+                if not all(key in session_data for key in ['games', 'stats', 'save_states']):
+                    raise ValueError("Session data is missing required fields")
+                # Load the stats from the session into the stats tracker
+                game_stats = session_data.get('stats', [{}])[0]  # The first element is the game stats dictionary
+                total_swaps = session_data.get('stats', [{}, 0])[1]  # The second element is the total swaps
+                total_shuffling_time = session_data.get('stats', [{}, 0, 0])[2]  # The third element is the total shuffling time
+
+                initial_stats = {
+                    'game_stats': game_stats,
+                    'total_swaps': total_swaps,
+                    'total_shuffling_time': total_shuffling_time
+                }
+                self.game_manager.stats_tracker = StatsTracker(initial_stats)
+            if not self.is_shuffling:
+                # Read shuffle interval configurations
+                min_interval = self.config.get('min_shuffle_interval', 30)
+                max_interval = self.config.get('max_shuffle_interval', 60)
+                
+                # Convert to milliseconds and ensure min_interval is not greater than max_interval
+                self.shuffle_interval = random.randint(min(min_interval, max_interval), max(max_interval, min_interval)) * 1000
+                
+                # Check if BizHawk/EmuHawk process is running
+                if self.is_bizhawk_process_running():
+                    self.is_shuffling = True
+                    self.shuffle_games()
+                else:
+                    print("BizHawk/EmuHawk process is not running. Cannot start shuffle.")
+            else:
+                # Shuffle is already active, prevent starting another shuffle
+                print("Shuffle is already active.")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while starting shuffle: {e}")
+            QMessageBox.critical(self, "Shuffle Error", f"An error occurred while starting shuffle: {e}")
 
     def determine_shuffle_interval(self):
-        min_interval = self.config_manager.config.get('min_shuffle_interval', 30)
-        max_interval = self.config_manager.config.get('max_shuffle_interval', 60)
-        return random.randint(min_interval, max_interval) * 1000  # in milliseconds
+        # Define default values for shuffle intervals
+        default_min_interval = 30
+        default_max_interval = 60
+    
+        # Get shuffle intervals from the configuration, with defaults if not set
+        min_interval = self.config_manager.config.get('min_shuffle_interval', default_min_interval)
+        max_interval = self.config_manager.config.get('max_shuffle_interval', default_max_interval)
+    
+        # Ensure min_interval is not greater than max_interval
+        if min_interval > max_interval:
+            logging.warning("Minimum interval is greater than maximum interval. Using default values.")
+            min_interval, max_interval = default_min_interval, default_max_interval
+    
+        # Return a random interval within the specified range
+        return random.randint(min_interval, max_interval) * 1000
 
     def pause_shuffle(self):
         self.is_shuffling = False
@@ -436,10 +464,12 @@ class MainWindow(QMainWindow):
 
 
     def shuffle_games(self):
-        # Check if shuffling is disabled or the game list is empty
+        # Check if shuffling is disabled
         if not self.is_shuffling:
             logging.info("Shuffling is disabled.")
             return
+
+        # Check if the game list is empty
         if not self.game_manager.games:
             logging.warning("No games available to shuffle.")
             QMessageBox.warning(self, "Shuffle Error", "No games available to shuffle.")
@@ -447,16 +477,18 @@ class MainWindow(QMainWindow):
             return
 
         # Remove current game from available games
-        available_games = [game for game in self.game_manager.games if game != self.current_game_path]
+        available_games = list(self.game_manager.games.keys())
+        if self.current_game_path in available_games:
+            available_games.remove(self.current_game_path)
 
         # If only one game is available, or all games are marked as completed, shuffling is not possible
-        if len(available_games) <= 1:
+        if len(available_games) <= 1 or all(self.game_manager.games[game]['completed'] for game in available_games):
             logging.info("Cannot shuffle: Only one game available or all games are completed.")
-            QMessageBox.information(self, "Shuffle Info", "Cannot shuffle: Only one game available.")
-            self.is_shuffling = False  # Stop shuffling
-            return
-        if all(self.game_manager.games[game]['completed'] for game in available_games):
-            QMessageBox.information(self, "Congratulations!", "Amazing! You have completed all the games.")
+            if all(self.game_manager.games[game]['completed'] for game in available_games):
+                # If all games are completed, show a congratulatory message
+                QMessageBox.information(self, "Congratulations!", "Amazing! You have completed all the games.")
+            else:
+                QMessageBox.information(self, "Shuffle Info", "Cannot shuffle: Only one game available.")
             self.is_shuffling = False  # Stop shuffling
             return
 
@@ -464,31 +496,36 @@ class MainWindow(QMainWindow):
         try:
             # Select a random game and switch to it
             next_game_path = random.choice(available_games)
-            self.game_manager.switch_to_game(next_game_path)
+            next_game_name = self.game_manager.games[next_game_path]['name']
+            self.game_manager.switch_game(next_game_name)
 
             # Save and load game state
             if self.current_game_path:
                 self.save_game_state(self.current_game_path)
+                self.update_and_save_session()
             self.load_game(next_game_path)
+            self.load_game_state(next_game_path)
             self.update_and_save_session()
+            self.update_session_info()
 
         except Exception as e:
             logging.error(f"Error switching to the next game: {e}")
             self.statusBar().showMessage(f"An error occurred while switching games: {e}")
-            return
+            
+                   
 
         # Update current game path
         self.current_game_path = next_game_path
 
         # Schedule next shuffle
-        shuffle_interval = self.determine_shuffle_interval()
-        logging.info("Scheduling next shuffle in %d seconds", shuffle_interval // 1000)
-        QTimer.singleShot(shuffle_interval, self.shuffle_games)
+        min_interval, max_interval = self.config.get('min_shuffle_interval', 30), self.config.get('max_shuffle_interval', 60)
+        shuffle_interval = random.randint(min_interval, max_interval)
+        logging.info("Scheduling next shuffle in %d seconds", shuffle_interval)
+        QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)
 
         # Check if BizHawk process is still running
         if not self.is_bizhawk_process_running():
             self.pause_shuffle()
-
 
 
 
@@ -510,6 +547,13 @@ class MainWindow(QMainWindow):
             logging.error(f"Error saving game state: {e}")
             QMessageBox.critical(self, "Save State Error", f"An error occurred while saving the game state: {e}")
 
+    def load_game(self, game_path):
+        print(f"Loading game: {game_path}")  # Debugging line
+        if not game_path:
+            return
+        # Call to Python client script to load the game
+        Python_Client.load_rom(game_path)
+
     def load_game_state(self, game_path):
         print(f"Loading game state: {game_path}")  # Debugging line
         state_file = self.get_state_path(game_path)
@@ -523,20 +567,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Load State Error", f"An error occurred while loading the game state: {e}")
         else:
             print(f"State file does not exist: {state_file}")  # Debugging line
-            # Create a new save state
-            self.save_game_state(self.current_game_path)
-
-
-    def load_game_state(self, game_path):
-        print(f"Loading game state: {game_path}")  # Debugging line
-        state_file = self.get_state_path(game_path)
-        self.ensure_directory_exists(state_file)
-        if os.path.exists(state_file):
-            print(f"State file exists: {state_file}")  # Debugging line
-            Python_Client.load_state(state_file)
-        else:
-            print(f"State file does not exist: {state_file}")  # Debugging line
-            self.save_game_state(game_path)
+            self.save_game_state(game_path)  # Save the state if it doesn't exist
 
     def execute_bizhawk_script(self):
         """Launch BizHawk with the Lua script"""
@@ -723,7 +754,7 @@ class MainWindow(QMainWindow):
         # Set up the save, load, rename, and delete session buttons
         save_session_button = QPushButton("Save Current Session As...")
         save_session_button.clicked.connect(self.save_current_session)
-        load_session_button = QPushButton("Load Session")
+        load_session_button = QPushButton("Load Session from File...")
         load_session_button.clicked.connect(self.load_selected_session)
         rename_session_button = QPushButton("Rename Selected Session")
         rename_session_button.clicked.connect(self.rename_current_session)
@@ -931,3 +962,17 @@ class MainWindow(QMainWindow):
                 self.create_default_session()
         else:
             self.create_default_session()           
+            
+            
+    def create_twitch_integration_tab(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+    
+        # Placeholder for Twitch integration elements, replace with actual content
+        twitch_info_label = QLabel("Twitch Integration Coming Soon")
+        layout.addWidget(twitch_info_label)
+    
+        # TODO: Add authentication, chat, and other Twitch-related UI elements here
+    
+        tab.setLayout(layout)
+        return tab
