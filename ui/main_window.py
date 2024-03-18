@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QMenu
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from game_manager import GameManager
 from config import ConfigManager
 from session_manager import SessionManager
@@ -967,12 +968,16 @@ class MainWindow(QMainWindow):
     def create_twitch_integration_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-    
-        # Placeholder for Twitch integration elements, replace with actual content
-        twitch_info_label = QLabel("Twitch Integration Coming Soon")
-        layout.addWidget(twitch_info_label)
-    
-        # TODO: Add authentication, chat, and other Twitch-related UI elements here
-    
+
+        # Add button to start OAuth flow
+        auth_button = QPushButton("Authenticate with Twitch", tab)
+        auth_button.clicked.connect(self.start_oauth_flow)
+        layout.addWidget(auth_button)
+
+        # Add a web view to handle the login redirect
+        self.auth_webview = QWebEngineView()
+        layout.addWidget(self.auth_webview)
+
         tab.setLayout(layout)
         return tab
+
