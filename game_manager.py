@@ -70,4 +70,7 @@ class GameManager:
                 self.save_states[game_path] = save_state
 
 
-    
+    def mark_game_as_not_completed(self, path):
+        if path in self.games:
+            self.games[path]['completed'] = False
+            self.save_games()

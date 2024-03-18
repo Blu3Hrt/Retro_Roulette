@@ -16,27 +16,43 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.resize(600, 600)
         self.setWindowTitle("Retro Roulette")
-
+    
         # Create Tab Widget
         self.tab_widget = QTabWidget(self)
         self.setCentralWidget(self.tab_widget)
-
+    
         self.game_manager = GameManager()
         self.config_manager = ConfigManager()
         self.session_manager = SessionManager()
         self.stat_tracker = StatsTracker()
-        self.style_setter = Style() 
-        self.config = self.config_manager.load_config()              
-        self.current_session_name = None  # Initialize with None or a default session name
-        self.create_default_session()  # Create a default session if one doesn't exist
-        # Initialize tabs
-        self.init_tabs()
+        self.style_setter = Style()
+        self.config = self.config_manager.load_config()
+    
+        # Initialize tabs first to set up all UI elements including session_info_label
         self.init_ui()  
-        self.refresh_game_list()
-        self.update_session_info()
+        self.init_tabs()
+    
+        # Initialize session name
+        self.current_session_name = None  # Initialize with None or a default session name
+    
+        # Session loading logic
+        last_session_name = self.config.get('last_session')
+        if last_session_name:
+            # Use a try-except block to catch and log the exception if it occurs
+            try:
+                self.session_manager.load_session(last_session_name)
+            except Exception as e:
+                logging.error(f"An unexpected error occurred while loading the session: {e}")
+        else:
+            self.create_default_session()  # Fallback to default session if no last session is available
+    
+        # Further UI updates or refreshes
+        self.refresh_ui()
+    
+        # Set up the timer for updating stats display
         self.stats_timer = QTimer(self)
         self.stats_timer.timeout.connect(self.update_stats_display)
-        self.stats_timer.start(1000)    
+        self.stats_timer.start(1000)   
         
      
     def init_ui(self):
@@ -61,41 +77,60 @@ class MainWindow(QMainWindow):
     def create_game_management_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
+    
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search games...")
         self.search_input.textChanged.connect(self.filter_games)
         layout.addWidget(self.search_input)
-
+    
         add_games_button = QPushButton("Add Games")
         add_games_button.clicked.connect(self.add_games)
         layout.addWidget(add_games_button)
-
+    
         add_directory_button = QPushButton("Add Games from Directory")
         add_directory_button.clicked.connect(self.add_games_from_directory)
         layout.addWidget(add_directory_button)
-
+    
         self.game_list = QListWidget()
         self.game_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.game_list.customContextMenuRequested.connect(self.show_game_context_menu)
+        self.game_list.itemSelectionChanged.connect(self.display_game_details)  # Connect to display game details method
         layout.addWidget(self.game_list)
-
+    
         self.game_list.itemDoubleClicked.connect(self.handle_double_click)
-
+    
+        # Create a label to display the selected game's details
+        self.game_details_label = QLabel("Select a game to view details")
+        layout.addWidget(self.game_details_label)
+    
         return tab
 
     def show_game_context_menu(self, pos):
         menu = QMenu(self)
         remove_action = menu.addAction("Remove Selected Game")
-        complete_action = menu.addAction("Mark as Completed")
+        # Determine if the selected game is completed or not
+        selected_items = self.game_list.selectedItems()
+        if selected_items:
+            game_name = selected_items[0].text().split(" - ")[0]
+            game_path = self.find_game_path_by_name(game_name)
+            if game_path and self.game_manager.games[game_path]['completed']:
+                # If the game is completed, show "Unmark as Completed" option
+                complete_action = menu.addAction("Unmark as Completed")
+            else:
+                # If the game is not completed, show "Mark as Completed" option
+                complete_action = menu.addAction("Mark as Completed")
         rename_action = menu.addAction("Rename Selected Game")
         goals_action = menu.addAction("Set Goals for Selected Game")
-
+    
         action = menu.exec_(self.game_list.mapToGlobal(pos))
         if action == remove_action:
             self.remove_selected_game()
         elif action == complete_action:
-            self.mark_game_as_completed()
+            # Call the appropriate method based on the action text
+            if complete_action.text() == "Mark as Completed":
+                self.mark_game_as_completed()
+            else:
+                self.unmark_game_as_not_completed()
         elif action == rename_action:
             self.prompt_rename_game()
         elif action == goals_action:
@@ -145,12 +180,20 @@ class MainWindow(QMainWindow):
             if game_path:
                 game_data = self.game_manager.games[game_path]
                 details = f"Name: {game_data['name']}\nPath: {game_path}\nCompleted: {'Yes' if game_data['completed'] else 'No'}"
-                goals = self.game_manager.games[game_path]['goals']
-                details += f"\nGoals: {goals if goals else 'No goals set'}"
-                self.game_details_label.setText(details) 
-           
+                goals = game_data.get('goals', 'No goals set')
+                details += f"\nGoals: {goals}"
+    
+                # Retrieve game stats and format them for display
+                game_stats = self.game_manager.stats_tracker.game_stats.get(game_name, {})
+                swaps = game_stats.get('swaps', 0)
+                time_spent = self.game_manager.stats_tracker.format_time(game_stats.get('time_spent', 0))
+                
+                # Append the stats to the game details
+                details += f"\nSwaps: {swaps}\nTime Spent: {time_spent}"
+    
+                self.game_details_label.setText(details)
         else:
-            self.game_details_label.setText("Select a game to view details")    
+            self.game_details_label.setText("Select a game to view details")   
 
     def add_games(self):
         app_root = os.path.dirname(sys.modules['__main__'].__file__)
@@ -170,8 +213,20 @@ class MainWindow(QMainWindow):
                 print("Duplicate Game", f"{os.path.basename(file_name)} is already in the list.")
 
         if added_any:
-            self.refresh_game_list()
-            self.update_session_info()
+            self.refresh_ui()
+            # Prepare the session data
+            current_game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
+            session_data = {
+                'games': self.game_manager.games,
+                'stats': [current_game_stats, total_swaps, total_shuffling_time],
+                'save_states': self.game_manager.save_states
+            }
+            # Construct the file path for the session file
+            session_file_path = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+            # Save the session
+            self.session_manager.save_session(self.current_session_name, session_data['games'], 
+                                            session_data['stats'], session_data['save_states'], session_file_path)
+            
             
 
     def add_games_from_directory(self):
@@ -193,22 +248,36 @@ class MainWindow(QMainWindow):
                     else:
                         print("Duplicate Game", f"{file} is already in the list.")
 
-            if added_any:
-                self.refresh_game_list()
-                self.update_session_info()
+        if added_any:
+            self.refresh_ui()
+            # Prepare the session data
+            current_game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
+            session_data = {
+                'games': self.game_manager.games,
+                'stats': [current_game_stats, total_swaps, total_shuffling_time],
+                'save_states': self.game_manager.save_states
+            }
+            # Construct the file path for the session file
+            session_file_path = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+            # Save the session
+            self.session_manager.save_session(self.current_session_name, session_data['games'], 
+                                            session_data['stats'], session_data['save_states'], session_file_path)
+                
 
     def remove_selected_game(self):
         selected_items = self.game_list.selectedItems()
         if not selected_items:
-            QMessageBox.information(self, "Information", "No game selected for removal")
             return
 
         for item in selected_items:
             game_path = self.find_game_path_by_name(item.text())
             if game_path:
                 self.game_manager.remove_game(game_path)
-        self.refresh_game_list()
 
+        self.refresh_ui()
+        self.update_and_save_session()  # Save the session after removing the game
+
+# e:/Coding/Retro_Roulette/ui/main_window.py:MainWindow.mark_game_as_completed
     def mark_game_as_completed(self):
         selected_items = self.game_list.selectedItems()
         if not selected_items:
@@ -219,7 +288,27 @@ class MainWindow(QMainWindow):
             game_path = self.find_game_path_by_name(item.text())
             if game_path:
                 self.game_manager.mark_game_as_completed(game_path)
-        self.refresh_game_list()
+
+        self.refresh_ui()
+        self.update_and_save_session()  # Save the session after marking the game as completed
+        
+        
+    def unmark_game_as_not_completed(self):
+        selected_items = self.game_list.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "Information", "No game selected to unmark as completed")
+            return
+
+        for item in selected_items:
+            game_path = self.find_game_path_by_name(item.text())
+            if game_path:
+                self.game_manager.mark_game_as_not_completed(game_path)
+
+        self.refresh_ui()
+        self.update_and_save_session()    
+        
+        
+            
             
     def prompt_rename_game(self):
         selected_items = self.game_list.selectedItems()
@@ -656,15 +745,14 @@ class MainWindow(QMainWindow):
             try:
                 with open(session_path, 'r') as f:
                     session_data = json.load(f)
-                    self.current_session_name = os.path.basename(session_path)
+                    # Set session name from the content of the session file
+                    self.current_session_name = session_data['name']
                     self.game_manager.load_games(session_data['games'])
-                    stats = self.stat_tracker.get_stats()
                     self.game_manager.load_save_states(session_data['save_states'])
-                    self.refresh_game_list()
+                    self.refresh_ui()
                     self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)
             except:
                 QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
-
     def save_current_session(self):
         """Save the current session to a JSON file"""
         file_name = f"{self.current_session_name}.json"
@@ -691,7 +779,9 @@ class MainWindow(QMainWindow):
                 session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
                 if self.session_manager.delete_session(self.current_session_name):
                     self.current_session_name = None
-                    self.statusBar().showMessage(f"The '{self.current_session_name}' session has been deleted.", 5000)
+                    self.load_default_session()
+                    self.statusBar().showMessage(f"Session '{self.current_session_name}' has been deleted successfully and default session has been loaded.", 5000)
+                    self.refresh_ui
                 else:
                     QMessageBox.warning(self, "Delete Error", f"Failed to delete the '{self.current_session_name}' session.")
         else:
@@ -705,6 +795,7 @@ class MainWindow(QMainWindow):
                 if self.session_manager.rename_session(self.current_session_name, new_name):
                     self.current_session_name = new_name
                     self.statusBar().showMessage(f"Session renamed to '{new_name}'.", 5000)
+                    self.refresh_ui()
                 else:
                     QMessageBox.warning(self, "Rename Error", f"Failed to rename the session to '{new_name}'.")
         else:
@@ -714,35 +805,45 @@ class MainWindow(QMainWindow):
         return os.path.join(self.session_manager.directory, session_name)
             
     def update_session_info(self):
-        if self.current_session_name:
-            session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
-            try:
-                if os.path.exists(session_file):
-                    with open(session_file, 'r') as file:
-                        session_data = json.load(file)
-                        game_count = len(session_data['games'])
-                        stats = session_data['stats']
-                        total_swaps = stats[1]
-                        total_time = stats[2]
-                        self.session_info_label.setText(f"Session: {self.current_session_name}\n" +
-                                                        f"Games: {game_count}\n" +
-                                                        f"Swaps: {total_swaps}\n" +
-                                                        f"Time: {self.format_time(total_time)}")
-                else:
-                    raise FileNotFoundError
-            except FileNotFoundError:
-                self.session_info_label.setText(f"Session: {self.current_session_name}\n" +
-                                                f"Games: 0\n" +
-                                                f"Swaps: 0\n" +
-                                                f"Time: 00:00:00\n" +
-                                                "Session file does not exist.")
-            except json.JSONDecodeError:
-                QMessageBox.warning(self, "Load Error", "Failed to load the session file. It may be corrupted.")
-            except:
-                self.statusBar().showMessage("An unexpected error occurred while loading the session.", 5000)
+        if not self.current_session_name:
+            self.session_info_label.setText("No session available.")
+            return
 
-        else:
-            self.session_info_label.setText("Load a session to view details")
+        session_file = self.get_session_path(f"{self.current_session_name}.json")
+        if not os.path.exists(session_file):
+            self.session_info_label.setText(f"Session file for '{self.current_session_name}' does not exist.")
+            return
+
+        try:
+            with open(session_file, 'r') as file:
+                session_data = json.load(file)
+                session_name = session_data['name']
+                game_count = len(session_data['games'])
+                completed_game_count = sum(1 for game in session_data['games'].values() if game['completed'])
+                game_stats, total_swaps, total_time = session_data['stats']
+
+                # Formatting total_time to HH:MM:SS 
+                formatted_total_time = self.stat_tracker.format_time(total_time)
+
+                # Add completed_game_count to the label text
+                self.session_info_label.setText(f"Session: {session_name}\n" +
+                                                f"Games: {game_count}\n" +
+                                                f"Completed: {completed_game_count}\n" +  # <-- New line for completed games
+                                                f"Swaps: {total_swaps}\n" +
+                                                f"Time: {formatted_total_time}")
+        except FileNotFoundError:
+            # This exception handler should never be reached due to the earlier check,
+            # but it's kept as a safeguard.
+            self.session_info_label.setText(f"Session: {self.current_session_name}\n" +
+                                            f"Games: 0\n" +
+                                            f"Swaps: 0\n" +
+                                            f"Time: 00:00:00\n" +
+                                            "Session file does not exist.")
+        except json.JSONDecodeError:
+            QMessageBox.warning(self, "Load Error", "Failed to load the session file. It may be corrupted.")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while loading the session: {e}")
+            self.statusBar().showMessage("An unexpected error occurred while loading the session.", 5000)
 
 
     def update_and_save_session(self):
@@ -767,3 +868,28 @@ class MainWindow(QMainWindow):
         # Use the SessionManager to save the session to disk
         self.session_manager.save_session(self.current_session_name, session_data['games'], 
                                         session_data['stats'], session_data['save_states'], session_file_path)
+        
+        
+    def refresh_ui(self):
+        self.update_session_info()
+        self.refresh_game_list()
+        
+    def save_last_session(self, session_name):
+        # Assuming there is a method to get the full path to the config file
+        config_path = self.get_config_path()
+        try:
+            with open(config_path, 'r+') as file:
+                config_data = json.load(file)
+                config_data['last_session'] = session_name  # Add/update the last session entry
+                file.seek(0)
+                json.dump(config_data, file, indent=4)
+                file.truncate()
+        except Exception as e:
+            logging.error(f"Error saving last session: {e}")        
+            
+    def load_last_session(self):
+        last_session_name = self.config_manager.load_config().get('last_session')
+        if last_session_name:
+            self.current_session_name = last_session_name
+            self.load_selected_session()
+            self.refresh_ui()            

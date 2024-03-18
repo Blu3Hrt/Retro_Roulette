@@ -1,5 +1,4 @@
-import json, os
-from datetime import datetime
+import json, os, logging, shutil
 
 class SessionManager:
     def __init__(self, directory='sessions'):
@@ -25,95 +24,63 @@ class SessionManager:
                 return json.load(file)
 
     def get_saved_sessions(self):
-        return [f.replace('.json', '') for f in os.listdir(self.directory) if f.endswith('.json')]
+        return [os.path.splitext(f)[0] for f in os.listdir(self.directory) if f.endswith('.json')]
     
     def delete_session(self, session_name):
         session_file = os.path.join(self.directory, f"{session_name}.json")
+        save_state_dir = os.path.join('save_states', session_name)  # Path to the save state directory
         try:
             os.remove(session_file)
+            if os.path.isdir(save_state_dir):  # Check if the directory exists
+                shutil.rmtree(save_state_dir)  # Delete the directory and all its contents
             return True
         except FileNotFoundError:
             return False
+        except OSError as e:  # To handle any error while deleting the directory
+            logging.exception(f"Error while deleting save state directory: {e}")
+            return False
         
     def rename_session(self, old_name, new_name):
-        """
-        Renames a saved session.
-
-        Parameters:
-        old_name (str): The name of the saved session to rename.
-        new_name (str): The new name for the saved session.
-
-        Returns:
-        bool: True if the session was renamed, False otherwise.
-        """
         old_file = os.path.join(self.directory, f"{old_name}.json")
         new_file = os.path.join(self.directory, f"{new_name}.json")
         if os.path.exists(new_file):
-            # New session name already exists
             return False
         try:
-            if not old_file or not os.path.isfile(old_file):
+            if not os.path.isfile(old_file):
                 raise ValueError("Old session file does not exist or is not a file")
-            if not new_name or not isinstance(new_name, str):
+            if not new_name:
                 raise ValueError("New session name is invalid")
+    
+            # Rename the file first
             os.rename(old_file, new_file)
+    
+            # Now update the 'name' inside the session file
+            with open(new_file, 'r+') as file:
+                session_data = json.load(file)
+                session_data['name'] = new_name  # Update the session name
+                file.seek(0)  # Move to the start of the file
+                json.dump(session_data, file, indent=4)
+                file.truncate()  # Remove any remaining part of the old content
+    
+            # Check if there is a save state directory for this session
+            old_save_state_dir = os.path.join('save_states', old_name)
+            new_save_state_dir = os.path.join('save_states', new_name)
+            if os.path.exists(old_save_state_dir):
+                os.rename(old_save_state_dir, new_save_state_dir)
+    
             return True
         except OSError as e:
             print(e)
         except Exception as e:
-            print("Unknown error while renaming session:", e)
+            logging.exception("Unknown error while renaming session")
         return False
 
     def get_session_info(self, session_name):
         session_file = os.path.join(self.directory, f"{session_name}.json")
         try:
             with open(session_file, 'r') as file:
-                session_data = json.load(file)
-            return session_data
-        except FileNotFoundError:
-            return "Session file not found."
-        except json.JSONDecodeError:
-            return "Error reading session data."
- 
-    def session_exists(self, session_name):
-        session_file = os.path.join(self.directory, f"{session_name}.json")
-        return os.path.isfile(session_file)
-    
-    def get_default_session_path(self):
-        return os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions", "Default Session.json")
-    
-    def get_total_swaps(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'stats' in session_info:
-            return session_info['stats'].get('total_swaps', 0)
-        return 0
-    
-    def get_total_time(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'stats' in session_info:
-            return session_info['stats'].get('total_time', 0)
-        return 0
+                return json.load(file)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
 
-    def get_total_games(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return len(session_info['games'])
-        return 0
-
-    def get_game_names(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return list(session_info['games'].keys())
-        return []
-
-    def get_game_times(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return [game.get('time_played', 0) for game in session_info['games'].values()]
-        return []
-
-    def get_game_swaps(self, session_name):
-        session_info = self.get_session_info(session_name)
-        if session_info and 'games' in session_info:
-            return [game.get('swaps', 0) for game in session_info['games'].values()]
-        return []
+     
