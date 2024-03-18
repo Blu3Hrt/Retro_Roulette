@@ -316,18 +316,13 @@ class MainWindow(QMainWindow):
             # Check if BizHawk/EmuHawk process is running
             if self.is_bizhawk_process_running():
                 self.is_shuffling = True
-                # Reset stats only if it's a new session
-                if not self.is_same_session:
-                    self.reset_stats()
                 self.shuffle_games()
             else:
                 print("BizHawk/EmuHawk process is not running. Cannot start shuffle.")
         else:
             # Shuffle is already active, prevent starting another shuffle
             print("Shuffle is already active.")
-            
-    def is_same_session(self):
-        return self.session_name == self.config_manager.config.get('session_name', 'Default Session')
+
 
     def determine_shuffle_interval(self):
         min_interval = self.config_manager.config.get('min_shuffle_interval', 30)
