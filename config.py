@@ -24,3 +24,5 @@ class ConfigManager:
             'max_shuffle_interval': 60
         }
 
+    def get_config_path(self):
+        return self.config_file

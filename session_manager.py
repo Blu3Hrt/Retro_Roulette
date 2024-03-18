@@ -19,9 +19,19 @@ class SessionManager:
 
     def load_session(self, name):
         file_path = os.path.join(self.directory, f"{name}.json")
-        if os.path.exists(file_path):
+        try:
             with open(file_path, 'r') as file:
                 return json.load(file)
+        except FileNotFoundError:
+            logging.error(f"Session file {file_path} not found.")
+            return None
+        except json.JSONDecodeError:
+            logging.error(f"Error decoding JSON from {file_path}.")
+            return None
+        except Exception as e:
+            logging.error(f"An error occurred while loading session {name}: {e}")
+            return None
+
 
     def get_saved_sessions(self):
         return [os.path.splitext(f)[0] for f in os.listdir(self.directory) if f.endswith('.json')]

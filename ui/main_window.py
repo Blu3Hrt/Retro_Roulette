@@ -16,43 +16,35 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.resize(600, 600)
         self.setWindowTitle("Retro Roulette")
-    
+        
         # Create Tab Widget
         self.tab_widget = QTabWidget(self)
         self.setCentralWidget(self.tab_widget)
-    
+        
         self.game_manager = GameManager()
         self.config_manager = ConfigManager()
         self.session_manager = SessionManager()
         self.stat_tracker = StatsTracker()
         self.style_setter = Style()
+        
+        # Load configuration
         self.config = self.config_manager.load_config()
-    
-        # Initialize tabs first to set up all UI elements including session_info_label
-        self.init_ui()  
+        
+        # Initialize UI tabs
+        self.init_ui()
         self.init_tabs()
-    
-        # Initialize session name
-        self.current_session_name = None  # Initialize with None or a default session name
-    
-        # Session loading logic
-        last_session_name = self.config.get('last_session')
-        if last_session_name:
-            # Use a try-except block to catch and log the exception if it occurs
-            try:
-                self.session_manager.load_session(last_session_name)
-            except Exception as e:
-                logging.error(f"An unexpected error occurred while loading the session: {e}")
-        else:
-            self.create_default_session()  # Fallback to default session if no last session is available
-    
-        # Further UI updates or refreshes
+        
+        # Initialize session name with None
+        self.current_session_name = None
+        
+        # Load last session if it exists
+        self.load_last_session()
+        
+        # Set up UI refresh and stats timer
         self.refresh_ui()
-    
-        # Set up the timer for updating stats display
         self.stats_timer = QTimer(self)
         self.stats_timer.timeout.connect(self.update_stats_display)
-        self.stats_timer.start(1000)   
+        self.stats_timer.start(1000)
         
      
     def init_ui(self):
@@ -444,44 +436,59 @@ class MainWindow(QMainWindow):
 
 
     def shuffle_games(self):
-        # Skip shuffling if there are no games or shuffling is disabled 
-        if not self.is_shuffling or not self.game_manager.games:
+        # Check if shuffling is disabled or the game list is empty
+        if not self.is_shuffling:
+            logging.info("Shuffling is disabled.")
             return
-        # Remove current game from available games
-        available_games = list(self.game_manager.games.keys())  
-        if self.current_game_path and len(available_games) > 1:
-            available_games.remove(self.current_game_path)
+        if not self.game_manager.games:
+            logging.warning("No games available to shuffle.")
+            QMessageBox.warning(self, "Shuffle Error", "No games available to shuffle.")
+            self.is_shuffling = False  # Stop shuffling
+            return
 
+        # Remove current game from available games
+        available_games = [game for game in self.game_manager.games if game != self.current_game_path]
+
+        # If only one game is available, or all games are marked as completed, shuffling is not possible
+        if len(available_games) <= 1:
+            logging.info("Cannot shuffle: Only one game available or all games are completed.")
+            QMessageBox.information(self, "Shuffle Info", "Cannot shuffle: Only one game available.")
+            self.is_shuffling = False  # Stop shuffling
+            return
+        if all(self.game_manager.games[game]['completed'] for game in available_games):
+            QMessageBox.information(self, "Congratulations!", "Amazing! You have completed all the games.")
+            self.is_shuffling = False  # Stop shuffling
+            return
+
+        # Shuffle the games
         try:
             # Select a random game and switch to it
-            next_game_path = random.choice(available_games)  
-            next_game_name = self.game_manager.games[next_game_path]['name']
-            self.game_manager.switch_game(next_game_name)
+            next_game_path = random.choice(available_games)
+            self.game_manager.switch_to_game(next_game_path)
 
             # Save and load game state
             if self.current_game_path:
                 self.save_game_state(self.current_game_path)
-                self.update_and_save_session()
             self.load_game(next_game_path)
-            self.load_game_state(next_game_path)
             self.update_and_save_session()
-            self.update_session_info()
 
         except Exception as e:
-            logging.error("Error shuffling games: " + str(e))
+            logging.error(f"Error switching to the next game: {e}")
+            self.statusBar().showMessage(f"An error occurred while switching games: {e}")
+            return
 
         # Update current game path
         self.current_game_path = next_game_path
 
         # Schedule next shuffle
-        min_interval, max_interval = self.config.get('min_shuffle_interval', 30), self.config.get('max_shuffle_interval', 60)
-        shuffle_interval = random.randint(min_interval, max_interval)
-        logging.info("Scheduling next shuffle in %d seconds", shuffle_interval)
-        QTimer.singleShot(shuffle_interval * 1000, self.shuffle_games)
+        shuffle_interval = self.determine_shuffle_interval()
+        logging.info("Scheduling next shuffle in %d seconds", shuffle_interval // 1000)
+        QTimer.singleShot(shuffle_interval, self.shuffle_games)
 
         # Check if BizHawk process is still running
         if not self.is_bizhawk_process_running():
             self.pause_shuffle()
+
 
 
 
@@ -496,14 +503,29 @@ class MainWindow(QMainWindow):
             return
         state_path = self.get_state_path(game_path)
         self.ensure_directory_exists(state_path)  # Ensure the directory exists
-        Python_Client.save_state(state_path)  # Save the game state
+        try:
+            Python_Client.save_state(state_path)
+            logging.info(f"Game state saved successfully to {state_path}")
+        except Exception as e:
+            logging.error(f"Error saving game state: {e}")
+            QMessageBox.critical(self, "Save State Error", f"An error occurred while saving the game state: {e}")
 
-    def load_game(self, game_path):
-        print(f"Loading game: {game_path}")  # Debugging line
-        if not game_path:
-            return
-        # Call to Python client script to load the game
-        Python_Client.load_rom(game_path)
+    def load_game_state(self, game_path):
+        print(f"Loading game state: {game_path}")  # Debugging line
+        state_file = self.get_state_path(game_path)
+        self.ensure_directory_exists(state_file)
+        if os.path.exists(state_file):
+            try:
+                Python_Client.load_state(state_file)
+                logging.info(f"Game state loaded successfully from {state_file}")
+            except Exception as e:
+                logging.error(f"Error loading game state: {e}")
+                QMessageBox.critical(self, "Load State Error", f"An error occurred while loading the game state: {e}")
+        else:
+            print(f"State file does not exist: {state_file}")  # Debugging line
+            # Create a new save state
+            self.save_game_state(self.current_game_path)
+
 
     def load_game_state(self, game_path):
         print(f"Loading game state: {game_path}")  # Debugging line
@@ -617,7 +639,6 @@ class MainWindow(QMainWindow):
         self.config = self.config_manager.load_config()
         
 
-
     def validate_intervals(self, min_val, max_val):
         """Validate shuffle interval settings"""
         try:
@@ -700,7 +721,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.session_info_label)
 
         # Set up the save, load, rename, and delete session buttons
-        save_session_button = QPushButton("Save Current Session")
+        save_session_button = QPushButton("Save Current Session As...")
         save_session_button.clicked.connect(self.save_current_session)
         load_session_button = QPushButton("Load Session")
         load_session_button.clicked.connect(self.load_selected_session)
@@ -732,6 +753,7 @@ class MainWindow(QMainWindow):
             self.session_manager.save_session('Default Session', self.game_manager.games, self.game_manager.stats_tracker.get_stats(), {}, 'sessions/Default Session.json')
             self.current_session_name = 'Default Session'
             self.update_session_info()
+        self.save_last_session(self.current_session_name)       
             
             
     def load_selected_session(self):
@@ -751,6 +773,7 @@ class MainWindow(QMainWindow):
                     self.game_manager.load_save_states(session_data['save_states'])
                     self.refresh_ui()
                     self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)
+                    self.save_last_session(self.current_session_name)
             except:
                 QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
     def save_current_session(self):
@@ -770,6 +793,7 @@ class MainWindow(QMainWindow):
             with open(file_path, 'w') as f:
                 json.dump(data, f, indent=4)
             self.statusBar().showMessage(f"Session saved successfully to {file_path}", 5000)
+            self.save_last_session(self.current_session_name)
             
     def delete_current_session(self):
         """Delete the currently loaded session"""
@@ -782,6 +806,7 @@ class MainWindow(QMainWindow):
                     self.load_default_session()
                     self.statusBar().showMessage(f"Session '{self.current_session_name}' has been deleted successfully and default session has been loaded.", 5000)
                     self.refresh_ui
+                    self.save_last_session('Default Session')
                 else:
                     QMessageBox.warning(self, "Delete Error", f"Failed to delete the '{self.current_session_name}' session.")
         else:
@@ -796,10 +821,12 @@ class MainWindow(QMainWindow):
                     self.current_session_name = new_name
                     self.statusBar().showMessage(f"Session renamed to '{new_name}'.", 5000)
                     self.refresh_ui()
+                    self.save_last_session(new_name)
                 else:
                     QMessageBox.warning(self, "Rename Error", f"Failed to rename the session to '{new_name}'.")
         else:
             self.statusBar().showMessage("No session selected for renaming.", 5000)
+            
 
     def get_session_path(self, session_name):
         return os.path.join(self.session_manager.directory, session_name)
@@ -875,21 +902,32 @@ class MainWindow(QMainWindow):
         self.refresh_game_list()
         
     def save_last_session(self, session_name):
-        # Assuming there is a method to get the full path to the config file
-        config_path = self.get_config_path()
+        config_path = self.config_manager.get_config_path()  # Assuming this function correctly retrieves config file path
         try:
             with open(config_path, 'r+') as file:
                 config_data = json.load(file)
-                config_data['last_session'] = session_name  # Add/update the last session entry
+                config_data['last_session'] = session_name
                 file.seek(0)
                 json.dump(config_data, file, indent=4)
                 file.truncate()
         except Exception as e:
-            logging.error(f"Error saving last session: {e}")        
+            logging.error(f"Error saving last session: {e}")       
             
     def load_last_session(self):
-        last_session_name = self.config_manager.load_config().get('last_session')
+        last_session_name = self.config.get('last_session')
         if last_session_name:
-            self.current_session_name = last_session_name
-            self.load_selected_session()
-            self.refresh_ui()            
+            try:
+                session_data = self.session_manager.load_session(last_session_name)
+                if session_data:
+                    self.current_session_name = last_session_name
+                    self.game_manager.load_games(session_data['games'])
+                    self.game_manager.load_save_states(session_data['save_states'])
+                    self.refresh_ui()
+                else:
+                    logging.error(f"Session data for '{last_session_name}' could not be loaded.")
+                    self.create_default_session()
+            except Exception as e:
+                logging.error(f"An unexpected error occurred while loading the session: {e}")
+                self.create_default_session()
+        else:
+            self.create_default_session()           
