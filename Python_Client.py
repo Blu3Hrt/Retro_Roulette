@@ -1,5 +1,4 @@
-import socket
-import os
+import socket, os
 
 sock = None
 
@@ -29,5 +28,5 @@ def load_state(state_path):
     send_command(f"loadstate {path}")   
 
 
-# Example usage
-# load_rom("E:\\Coding\\Retro_Roulette\\Games\\Pokemon_FireRed.gba")
+
+
