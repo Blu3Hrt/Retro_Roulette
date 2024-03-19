@@ -50,6 +50,9 @@ class MainWindow(QMainWindow):
         self.stats_timer = QTimer(self)
         self.stats_timer.timeout.connect(self.update_stats_display)
         self.stats_timer.start(1000)
+        self.stats_update_timer = QTimer(self)
+        self.stats_update_timer.timeout.connect(self.update_stats_files)
+        self.stats_update_timer.start(1000)  # Timer set to trigger every 1000 milliseconds (1 second)        
         
      
     def init_ui(self):
@@ -328,9 +331,10 @@ class MainWindow(QMainWindow):
             self.rename_selected_game(selected_items[0], new_name)            
 
     def rename_selected_game(self, item, new_name):
-        path = self.find_game_path_by_name(item.text())
+        old_name = item.text()  # This assumes that item.text() is the old game name
+        path = self.find_game_path_by_name(old_name)
         if path:
-            self.game_manager.rename_game(path, new_name)
+            self.game_manager.rename_game(path, old_name, new_name)
             self.refresh_game_list()
             
     def find_game_path_by_name(self, name):
@@ -590,10 +594,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "BizHawk executable not found.")
 
     def get_state_path(self, game_file):
-        session_dir = os.path.join('save_states', self.current_session_name)
+        session_dir = self.get_session_path(self.current_session_name)
+        save_states_dir = os.path.join(session_dir, 'savestates')
         game_id = os.path.splitext(os.path.basename(game_file))[0]
         state_file = f"{game_id}.state"
-        return os.path.join(session_dir, state_file)
+        return os.path.join(save_states_dir, state_file)
     
     
 
@@ -742,7 +747,13 @@ class MainWindow(QMainWindow):
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-
+    def update_stats_files(self):
+        # Make sure there is a session to update
+        if not self.current_session_name:
+            return
+        self.current_game_name = self.game_manager.current_game
+        session_folder = self.get_session_path(self.current_session_name)
+        self.game_manager.stats_tracker.write_individual_stats_to_files(session_folder, self.current_game_name)
 
 
 
@@ -864,54 +875,6 @@ class MainWindow(QMainWindow):
         self.session_dropdown.currentIndexChanged.connect(self.load_session_from_dropdown)     
         
     def create_new_session(self):
-        new_session_name, ok = QInputDialog.getText(self, 'New Session', 'Enter new session name:')
-        if ok and new_session_name:
-            # Define the new session path
-            new_session_path = self.get_session_path(new_session_name)
-            # Create the session folder and subfolders
-            os.makedirs(new_session_path, exist_ok=True)
-            save_states_path = os.path.join(new_session_path, 'savestates')
-            os.makedirs(save_states_path, exist_ok=True)
-    
-            # Initialize session data
-            session_data = {
-                'name': new_session_name,
-                'games': [],  # Assuming a new session starts with no games
-                'stats': {},  # Assuming a new session starts with no stats
-                'save_states': {}  # Assuming a new session starts with no save states
-            }
-    
-            # Save the session data to 'session.json'
-            session_file_path = os.path.join(new_session_path, 'session.json')
-            with open(session_file_path, 'w') as f:
-                json.dump(session_data, f, indent=4)
-    
-            # Update current session and UI
-            self.current_session_name = new_session_name
-            self.refresh_ui()               
-            
-    def load_selected_session(self):
-        sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
-        file_dialog = QFileDialog(directory=sessions_dir)
-        file_dialog.setFileMode(QFileDialog.ExistingFile)
-        file_dialog.setNameFilter("JSON files (*.json)")
-        file_dialog.setDefaultSuffix("*.json")
-        if file_dialog.exec_():
-            session_path = file_dialog.selectedFiles()[0]
-            try:
-                with open(session_path, 'r') as f:
-                    session_data = json.load(f)
-                    # Set session name from the content of the session file
-                    self.current_session_name = session_data['name']
-                    self.game_manager.load_games(session_data['games'])
-                    self.game_manager.load_save_states(session_data['save_states'])
-                    self.refresh_ui()
-                    self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)
-                    self.save_last_session(self.current_session_name)
-            except:
-                QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
-
-    def create_new_session(self):
         new_session_name, ok = QInputDialog.getText(self, 'Create New Session', 'Enter new session name:')
         if ok and new_session_name:
             new_session_path = self.get_session_path(new_session_name)
@@ -926,7 +889,7 @@ class MainWindow(QMainWindow):
             session_file_path = os.path.join(new_session_path, 'session.json')
             session_data = {
                 'name': new_session_name,
-                'games': [],
+                'games': {},
                 'stats': {},
                 'save_states': {}
             }
@@ -937,6 +900,7 @@ class MainWindow(QMainWindow):
             self.current_session_name = new_session_name
             self.refresh_ui()
             self.populate_session_dropdown()
+            self.session_dropdown.setCurrentText(new_session_name)
             QMessageBox.information(self, "Session Created", f"Session '{new_session_name}' has been created successfully.")
                 
     def save_current_session(self):
@@ -957,8 +921,7 @@ class MainWindow(QMainWindow):
     
         # Save the session data to 'session.json'
         with open(session_file, 'w') as f:
-            json.dump(session_data, f, indent=4)
-    
+            json.dump(session_data, f, indent=4)  
         self.statusBar().showMessage(f"Session '{self.current_session_name}' saved successfully.", 5000)
             
     def delete_current_session(self):
@@ -966,13 +929,25 @@ class MainWindow(QMainWindow):
         if self.current_session_name:
             result = QMessageBox.question(self, "Delete Session", f"Are you sure you want to delete the '{self.current_session_name}' session?", QMessageBox.Yes | QMessageBox.No)
             if result == QMessageBox.Yes:
-                session_file = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+                # Check if this is the last session available
+                available_sessions = self.get_available_sessions()  # Make sure this method returns a list of session names
+                is_last_session = len(available_sessions) == 1 and self.current_session_name in available_sessions
+    
                 if self.session_manager.delete_session(self.current_session_name):
                     self.current_session_name = None
-                    self.load_default_session()
-                    self.statusBar().showMessage(f"Session '{self.current_session_name}' has been deleted successfully and default session has been loaded.", 5000)
-                    self.refresh_ui
-                    self.save_last_session('Default Session')
+                    self.statusBar().showMessage("Session has been deleted successfully.", 5000)
+                    self.populate_session_dropdown()
+    
+                    if is_last_session:
+                        # If it was the last session, create a default session
+                        self.create_default_session()
+                        self.populate_session_dropdown()
+                        self.session_dropdown.setCurrentText('Default Session')
+                        self.load_session('Default Session')
+                    else:
+                        # Load another session if available
+                        self.load_session(available_sessions[0])
+    
                 else:
                     QMessageBox.warning(self, "Delete Error", f"Failed to delete the '{self.current_session_name}' session.")
         else:
@@ -980,19 +955,27 @@ class MainWindow(QMainWindow):
             
     def rename_current_session(self):
         """Rename the currently selected session"""
-        if self.current_session_name:
-            new_name, ok = QInputDialog.getText(self, "Rename Session", "Enter new name for the session:", text=self.current_session_name)
-            if ok and new_name:
-                if self.session_manager.rename_session(self.current_session_name, new_name):
-                    self.current_session_name = new_name
-                    self.statusBar().showMessage(f"Session renamed to '{new_name}'.", 5000)
-                    self.refresh_ui()
-                    self.save_last_session(new_name)
-                else:
-                    QMessageBox.warning(self, "Rename Error", f"Failed to rename the session to '{new_name}'.")
-        else:
-            self.statusBar().showMessage("No session selected for renaming.", 5000)
-            
+        try:
+            if self.current_session_name:
+                new_name, ok = QInputDialog.getText(self, "Rename Session", "Enter new name for the session:", text=self.current_session_name)
+                if ok and new_name:
+                    if self.session_manager.rename_session(self.current_session_name, new_name):
+                        self.current_session_name = new_name
+                        self.statusBar().showMessage(f"Session renamed to '{new_name}'.", 5000)
+                        self.refresh_ui()
+                        self.save_last_session(new_name)
+                        self.populate_session_dropdown()
+                        self.load_session_from_dropdown(new_name)
+                    else:
+                        QMessageBox.warning(self, "Rename Error", f"Failed to rename the session to '{new_name}'.")
+            else:
+                self.statusBar().showMessage("No session selected for renaming.", 5000)
+        except PermissionError as e:
+            logging.exception("Permission denied while renaming session folder. Make sure the folder is not open and you have proper permissions.")
+            return False
+        except OSError as e:
+            logging.exception(f"Error while renaming session folder: {e}")
+            return False            
 
     def get_session_path(self, session_name):
         return os.path.join('sessions', session_name)  # Adjust the path as necessary
@@ -1066,6 +1049,7 @@ class MainWindow(QMainWindow):
         # Use the SessionManager to save the session to disk
         self.session_manager.save_session(self.current_session_name, session_data['games'], 
                                         session_data['stats'], session_data['save_states'], session_file_path)
+        self.save_last_session(self.current_session_name)
         
         
     def refresh_ui(self):
@@ -1085,23 +1069,28 @@ class MainWindow(QMainWindow):
             logging.error(f"Error saving last session: {e}")       
             
     def load_last_session(self):
+        # Attempt to load the last session if its name exists in the config
         last_session_name = self.config.get('last_session')
+        print(f"Debug: Last session name from config is '{last_session_name}'")  # Debug line
+    
         if last_session_name:
-            try:
-                session_data = self.session_manager.load_session(last_session_name)
-                if session_data:
-                    self.current_session_name = last_session_name
-                    self.game_manager.load_games(session_data['games'])
-                    self.game_manager.load_save_states(session_data['save_states'])
-                    self.refresh_ui()
-                else:
-                    logging.error(f"Session data for '{last_session_name}' could not be loaded.")
-                    self.create_default_session()
-            except Exception as e:
-                logging.error(f"An unexpected error occurred while loading the session: {e}")
+            # Check if the session data can be loaded
+            session_data = self.session_manager.load_session(last_session_name)
+            if session_data:
+                print("Debug: Last session data loaded successfully")  # Debug line
+                self.load_session(last_session_name)
+            else:
+                print("Debug: Last session data could not be loaded, loading default session")  # Debug line
                 self.create_default_session()
+                self.load_session('Default Session')
         else:
-            self.create_default_session()           
+            print("Debug: No last session name in config, loading default session")  # Debug line
+            self.create_default_session()
+            self.load_session('Default Session')
+    
+        # Ensure the dropdown is reflecting the current session
+        self.populate_session_dropdown()
+        self.session_dropdown.setCurrentText(last_session_name)        
             
             
     def save_current_session_as_new(self):
@@ -1157,3 +1146,20 @@ class MainWindow(QMainWindow):
         
         tab.setLayout(layout)
         return tab
+    
+    
+def closeEvent(self, event):
+    # Save the current session as the last session
+    if self.current_session_name:
+        print("Saving the last session:", self.current_session_name)
+        self.save_last_session(self.current_session_name)
+    
+    # Stop shuffling if it's currently active
+    if self.is_shuffling:
+        print("Stopping shuffling.")
+        self.is_shuffling = False  # Set the flag to False to indicate shuffling should stop
+        # Perform any other necessary cleanup related to stopping shuffling
+
+    # Call the parent method to ensure proper closure
+    print("Closing the main window.")
+    super(MainWindow, self).closeEvent(event)
