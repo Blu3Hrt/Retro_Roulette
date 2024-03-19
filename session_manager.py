@@ -6,8 +6,17 @@ class SessionManager:
         os.makedirs(directory, exist_ok=True)
 
 # Update the save_session method in the SessionManager class to include the 'file_path' argument
-    def save_session(self, name, games, stats, save_states, file_path):
-        """Save a session to disk."""
+    def save_session(self, name, games, stats, save_states, file_path=None):
+        """Save a session to disk within a dedicated folder for the session."""
+        # Create the session folder if it doesn't exist
+        session_folder = os.path.join(self.directory, name)
+        os.makedirs(session_folder, exist_ok=True)
+    
+        # If a custom file_path is not provided, define the default path
+        if not file_path:
+            file_path = os.path.join(session_folder, 'session.json')
+    
+        # Save the session data
         session_data = {
             'name': name,
             'games': games,
@@ -18,7 +27,7 @@ class SessionManager:
             json.dump(session_data, file, indent=4)
 
     def load_session(self, name):
-        file_path = os.path.join(self.directory, f"{name}.json")
+        file_path = os.path.join(self.directory, name, 'session.json')
         try:
             with open(file_path, 'r') as file:
                 return json.load(file)
@@ -32,17 +41,12 @@ class SessionManager:
             logging.error(f"An error occurred while loading session {name}: {e}")
             return None
 
-
-    def get_saved_sessions(self):
-        return [os.path.splitext(f)[0] for f in os.listdir(self.directory) if f.endswith('.json')]
     
     def delete_session(self, session_name):
-        session_file = os.path.join(self.directory, f"{session_name}.json")
-        save_state_dir = os.path.join('save_states', session_name)  # Path to the save state directory
+        session_folder = os.path.join(self.directory, session_name)
         try:
-            os.remove(session_file)
-            if os.path.isdir(save_state_dir):  # Check if the directory exists
-                shutil.rmtree(save_state_dir)  # Delete the directory and all its contents
+            if os.path.isdir(session_folder):
+                shutil.rmtree(session_folder)  # Delete the directory and all its contents
             return True
         except FileNotFoundError:
             return False
@@ -51,42 +55,40 @@ class SessionManager:
             return False
         
     def rename_session(self, old_name, new_name):
-        old_file = os.path.join(self.directory, f"{old_name}.json")
-        new_file = os.path.join(self.directory, f"{new_name}.json")
-        if os.path.exists(new_file):
+        old_folder = os.path.join(self.directory, old_name)
+        new_folder = os.path.join(self.directory, new_name)
+        
+        if os.path.exists(new_folder):
+            logging.error(f"Session folder '{new_name}' already exists.")
             return False
+    
         try:
-            if not os.path.isfile(old_file):
-                raise ValueError("Old session file does not exist or is not a file")
-            if not new_name:
-                raise ValueError("New session name is invalid")
+            # Rename the session folder
+            os.rename(old_folder, new_folder)
     
-            # Rename the file first
-            os.rename(old_file, new_file)
+            # Update the 'name' inside the session.json file
+            session_file = os.path.join(new_folder, 'session.json')
+            if os.path.isfile(session_file):
+                with open(session_file, 'r+') as file:
+                    session_data = json.load(file)
+                    session_data['name'] = new_name  # Update the session name
+                    file.seek(0)  # Move to the start of the file
+                    json.dump(session_data, file, indent=4)
+                    file.truncate()  # Remove any remaining part of the old content
     
-            # Now update the 'name' inside the session file
-            with open(new_file, 'r+') as file:
-                session_data = json.load(file)
-                session_data['name'] = new_name  # Update the session name
-                file.seek(0)  # Move to the start of the file
-                json.dump(session_data, file, indent=4)
-                file.truncate()  # Remove any remaining part of the old content
-    
-            # Check if there is a save state directory for this session
-            old_save_state_dir = os.path.join('save_states', old_name)
-            new_save_state_dir = os.path.join('save_states', new_name)
-            if os.path.exists(old_save_state_dir):
-                os.rename(old_save_state_dir, new_save_state_dir)
+            # Rename the savestates folder if it exists
+            old_savestates_folder = os.path.join(old_folder, 'savestates')
+            new_savestates_folder = os.path.join(new_folder, 'savestates')
+            if os.path.exists(old_savestates_folder):
+                os.rename(old_savestates_folder, new_savestates_folder)
     
             return True
         except OSError as e:
-            print(e)
-        except Exception as e:
-            logging.exception("Unknown error while renaming session")
-        return False
+            logging.exception(f"Error while renaming session folder: {e}")
+            return False
 
     def get_session_info(self, session_name):
-        session_file = os.path.join(self.directory, f"{session_name}.json")
+        session_file = os.path.join(self.directory, session_name, 'session.json')
         try:
             with open(session_file, 'r') as file:
                 return json.load(file)

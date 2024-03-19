@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QMenu
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QMenu, QComboBox
 from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
@@ -9,7 +9,12 @@ from ui.style import Style
 import Python_Client
 
 import os, random, subprocess, time, json, sys, logging
-import psutil
+import psutil, shutil
+
+SUPPORTED_EXTENSIONS = (
+    '.nes', '.snes', '.gbc', '.gba', '.md', '.nds',
+    '.pce', '.sgx', '.sms', '.gg', '.sg', '.a26',  # Add more extensions as needed
+)
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -101,34 +106,42 @@ class MainWindow(QMainWindow):
 
     def show_game_context_menu(self, pos):
         menu = QMenu(self)
-        remove_action = menu.addAction("Remove Selected Game")
-        # Determine if the selected game is completed or not
         selected_items = self.game_list.selectedItems()
-        if selected_items:
+        
+        if not selected_items:  # Clicked on an empty space
+            add_games_action = menu.addAction("Add Games")
+            add_directory_action = menu.addAction("Add Games from Directory")
+        else:  # Clicked on a game
+            remove_action = menu.addAction("Remove Selected Game")
+            complete_action = None  # Initialize complete_action to None
             game_name = selected_items[0].text().split(" - ")[0]
             game_path = self.find_game_path_by_name(game_name)
-            if game_path and self.game_manager.games[game_path]['completed']:
-                # If the game is completed, show "Unmark as Completed" option
+            if game_path and self.game_manager.games[game_path].get('completed'):
                 complete_action = menu.addAction("Unmark as Completed")
             else:
-                # If the game is not completed, show "Mark as Completed" option
                 complete_action = menu.addAction("Mark as Completed")
-        rename_action = menu.addAction("Rename Selected Game")
-        goals_action = menu.addAction("Set Goals for Selected Game")
+            rename_action = menu.addAction("Rename Selected Game")
+            goals_action = menu.addAction("Set Goals for Selected Game")
     
         action = menu.exec_(self.game_list.mapToGlobal(pos))
-        if action == remove_action:
-            self.remove_selected_game()
-        elif action == complete_action:
-            # Call the appropriate method based on the action text
-            if complete_action.text() == "Mark as Completed":
-                self.mark_game_as_completed()
-            else:
-                self.unmark_game_as_not_completed()
-        elif action == rename_action:
-            self.prompt_rename_game()
-        elif action == goals_action:
-            self.prompt_set_game_goals()
+    
+        if not selected_items:  # Actions for clicking on an empty space
+            if action == add_games_action:
+                self.add_games()
+            elif action == add_directory_action:
+                self.add_games_from_directory()
+        else:  # Actions for clicking on a game
+            if action == remove_action:
+                self.remove_selected_game()
+            elif action and complete_action and action == complete_action:
+                if complete_action.text() == "Mark as Completed":
+                    self.mark_game_as_completed()
+                else:
+                    self.unmark_game_as_not_completed()
+            elif action == rename_action:
+                self.prompt_rename_game()
+            elif action == goals_action:
+                self.prompt_set_game_goals()
 
     def handle_double_click(self, item):
         self.prompt_rename_game()
@@ -194,32 +207,28 @@ class MainWindow(QMainWindow):
         games_dir = os.path.join(app_root, "games")
         if not os.path.exists(games_dir):
             os.makedirs(games_dir)
-
+            print("Created games directory:", games_dir)
+    
         file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", games_dir, 
                                                      "Game Files (*.nes *.snes *.gbc *.gba *.md *.nds)")
         added_any = False
         for file_name in file_names:
-            normalized_path = os.path.abspath(file_name)
+            # Check if the game file has a supported extension
+            if any(file_name.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+                normalized_path = os.path.abspath(file_name)
             if normalized_path not in self.game_manager.games:
+                # Add the game to the game manager
                 self.game_manager.add_game(normalized_path)
+                print("Added game:", normalized_path)
                 added_any = True
             else:
                 print("Duplicate Game", f"{os.path.basename(file_name)} is already in the list.")
 
         if added_any:
+            # Refresh the UI and update the session after adding games
             self.refresh_ui()
-            # Prepare the session data
-            current_game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
-            session_data = {
-                'games': self.game_manager.games,
-                'stats': [current_game_stats, total_swaps, total_shuffling_time],
-                'save_states': self.game_manager.save_states
-            }
-            # Construct the file path for the session file
-            session_file_path = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
-            # Save the session
-            self.session_manager.save_session(self.current_session_name, session_data['games'], 
-                                            session_data['stats'], session_data['save_states'], session_file_path)
+            self.update_and_save_session()  # Update session data and save using the unified function
+            print("UI refreshed and session updated.")
             
             
 
@@ -228,34 +237,35 @@ class MainWindow(QMainWindow):
         games_dir = os.path.join(app_root, "games")
         if not os.path.exists(games_dir):
             os.makedirs(games_dir)
-
+            print("Created games directory:", games_dir)
+    
         directory = QFileDialog.getExistingDirectory(self, "Select Directory", games_dir, 
                                                       QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
         if directory:
+            print("Selected directory for adding games:", directory)
             added_any = False
-            for file in os.listdir(directory):
-                if file.endswith((".nes", ".snes", ".gbc", ".gba", ".md", ".nds")):
-                    full_path = os.path.abspath(os.path.join(directory, file))
-                    if full_path not in self.game_manager.games:
-                        self.game_manager.add_game(full_path)
-                        added_any = True
-                    else:
-                        print("Duplicate Game", f"{file} is already in the list.")
+            # Get a list of all files in the selected directory
+            for file_name in os.listdir(directory):
+                file_path = os.path.join(directory, file_name)
+                if os.path.isfile(file_path):
+                    # Check if the game file has a supported extension
+                    if any(file_path.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+                        normalized_path = os.path.abspath(file_path)
+                        # Check if the game already exists in the list
+                        if normalized_path not in self.game_manager.games:
+                            # Add the game to the game manager
+                            self.game_manager.add_game(normalized_path)
+                            print("Added game:", normalized_path)
+                            added_any = True
+                        else:
+                            print("Duplicate Game", f"{os.path.basename(file_name)} is already in the list.")
 
-        if added_any:
-            self.refresh_ui()
-            # Prepare the session data
-            current_game_stats, total_swaps, total_shuffling_time = self.game_manager.stats_tracker.get_stats()
-            session_data = {
-                'games': self.game_manager.games,
-                'stats': [current_game_stats, total_swaps, total_shuffling_time],
-                'save_states': self.game_manager.save_states
-            }
-            # Construct the file path for the session file
-            session_file_path = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
-            # Save the session
-            self.session_manager.save_session(self.current_session_name, session_data['games'], 
-                                            session_data['stats'], session_data['save_states'], session_file_path)
+            if added_any:
+                # Refresh the UI and update the session after adding games
+                self.refresh_ui()
+                self.update_and_save_session()  # Update session data and save using the unified function
+                print("UI refreshed and session updated.")
+
                 
 
     def remove_selected_game(self):
@@ -746,25 +756,41 @@ class MainWindow(QMainWindow):
     def create_session_management_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
+            
+        create_new_session_button = QPushButton("Create New Session")
+        create_new_session_button.clicked.connect(self.create_new_session)        
+    
         # Add a label to display session info
         self.session_info_label = QLabel("Load a session to view details")
         layout.addWidget(self.session_info_label)
-
+    
         # Set up the save, load, rename, and delete session buttons
         save_session_button = QPushButton("Save Current Session As...")
-        save_session_button.clicked.connect(self.save_current_session)
-        load_session_button = QPushButton("Load Session from File...")
-        load_session_button.clicked.connect(self.load_selected_session)
+        save_session_button.clicked.connect(self.save_current_session_as_new)  # Assuming save_current_session_as_new is implemented
+        
+        # Session dropdown for selecting sessions
+        self.session_dropdown = QComboBox(self)
+        self.populate_session_dropdown()
+        self.session_dropdown.currentIndexChanged.connect(self.load_session_from_dropdown)        
+        
+        # Add session dropdown to layout
+        layout.addWidget(self.session_dropdown)  # This line adds the dropdown to the layout
+        
+        # Other session management buttons
         rename_session_button = QPushButton("Rename Selected Session")
         rename_session_button.clicked.connect(self.rename_current_session)
         delete_session_button = QPushButton("Delete Selected Session")
         delete_session_button.clicked.connect(self.delete_current_session)
+        
+        # Add buttons to layout
+        layout.addWidget(create_new_session_button)
         layout.addWidget(save_session_button)
-        layout.addWidget(load_session_button)
         layout.addWidget(rename_session_button)
         layout.addWidget(delete_session_button)
-
+    
+        # Set the layout on the tab
+        tab.setLayout(layout)
+    
         return tab
 
     def load_default_session(self):
@@ -775,17 +801,94 @@ class MainWindow(QMainWindow):
             self.game_manager.load_save_states(session_data['save_states'])
             self.current_session_name = 'Default Session'
 
+    def populate_session_dropdown(self):
+        self.session_dropdown.clear()
+        available_sessions = self.get_available_sessions()
+        self.session_dropdown.addItems(available_sessions)
+
+
+    def get_available_sessions(self):
+        sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
+        try:
+            return [name for name in os.listdir(sessions_dir) if os.path.isdir(os.path.join(sessions_dir, name))]
+        except FileNotFoundError:
+            logging.error("Sessions directory not found.")
+            return []
+    
+    def load_session_from_dropdown(self):
+        selected_session_index = self.session_dropdown.currentIndex()
+        selected_session_name = self.session_dropdown.itemText(selected_session_index)
+        if selected_session_name:
+            self.load_session(selected_session_name)
+        
+    def load_session(self, session_name):
+        session_folder = self.get_session_path(session_name)
+        session_file = os.path.join(session_folder, 'session.json')
+        try:
+            with open(session_file, 'r') as file:
+                session_data = json.load(file)
+                self.current_session_name = session_data['name']
+                self.game_manager.load_games(session_data['games'])
+                self.game_manager.load_save_states(session_data.get('save_states', {}))
+                self.refresh_ui()
+                self.statusBar().showMessage(f"Session '{self.current_session_name}' has been loaded successfully.", 5000)
+                self.save_last_session(self.current_session_name)
+        except Exception as e:
+            QMessageBox.warning(self, "Load Error", f"Failed to load the session '{session_name}'. It may be corrupted or missing. Error: {e}")            
 
     def create_default_session(self):
         """Creates a default session if one doesn't already exist, or loads it if it already exists"""
-        if os.path.exists('sessions/Default Session.json'):
+        default_session_path = self.get_session_path('Default Session')
+        default_session_file = os.path.join(default_session_path, 'session.json')
+    
+        if os.path.exists(default_session_file):
             self.load_default_session()
         else:
-            self.session_manager.save_session('Default Session', self.game_manager.games, self.game_manager.stats_tracker.get_stats(), {}, 'sessions/Default Session.json')
+            os.makedirs(default_session_path, exist_ok=True)  # Ensure the session folder exists
+            # Initialize session data with an empty structure
+            session_data = {
+                'name': 'Default Session',
+                'games': {},  # Use an empty dictionary for games
+                'stats': [],  # Use an empty list for stats
+                'save_states': {}  # Use an empty dictionary for save states
+            }
+            with open(default_session_file, 'w') as f:
+                json.dump(session_data, f, indent=4)
             self.current_session_name = 'Default Session'
-            self.update_session_info()
-        self.save_last_session(self.current_session_name)       
+            self.update_session_info()  # Assuming update_session_info is implemented to refresh UI
+        self.save_last_session(self.current_session_name)      
             
+    def create_session_dropdown(self):
+        self.session_dropdown = QComboBox()
+        self.session_dropdown.addItems(self.get_available_sessions())
+        self.session_dropdown.currentIndexChanged.connect(self.load_session_from_dropdown)     
+        
+    def create_new_session(self):
+        new_session_name, ok = QInputDialog.getText(self, 'New Session', 'Enter new session name:')
+        if ok and new_session_name:
+            # Define the new session path
+            new_session_path = self.get_session_path(new_session_name)
+            # Create the session folder and subfolders
+            os.makedirs(new_session_path, exist_ok=True)
+            save_states_path = os.path.join(new_session_path, 'savestates')
+            os.makedirs(save_states_path, exist_ok=True)
+    
+            # Initialize session data
+            session_data = {
+                'name': new_session_name,
+                'games': [],  # Assuming a new session starts with no games
+                'stats': {},  # Assuming a new session starts with no stats
+                'save_states': {}  # Assuming a new session starts with no save states
+            }
+    
+            # Save the session data to 'session.json'
+            session_file_path = os.path.join(new_session_path, 'session.json')
+            with open(session_file_path, 'w') as f:
+                json.dump(session_data, f, indent=4)
+    
+            # Update current session and UI
+            self.current_session_name = new_session_name
+            self.refresh_ui()               
             
     def load_selected_session(self):
         sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
@@ -807,24 +910,56 @@ class MainWindow(QMainWindow):
                     self.save_last_session(self.current_session_name)
             except:
                 QMessageBox.warning(self, "Load Error", "Failed to load the selected session. It may be corrupted or missing.")
-    def save_current_session(self):
-        """Save the current session to a JSON file"""
-        file_name = f"{self.current_session_name}.json"
-        sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
 
-        file_dialog = QFileDialog()
-        file_dialog.setDirectory(sessions_dir)
-        file_dialog.setFileMode(QFileDialog.AnyFile)
-        file_dialog.setAcceptMode(QFileDialog.AcceptSave)
-        file_dialog.selectFile(file_name)
-        file_dialog.setDefaultSuffix("*.json")
-        if file_dialog.exec():
-            file_path = file_dialog.selectedFiles()[0]
-            data = {'name': self.current_session_name, 'games': self.game_manager.games, 'stats': self.game_manager.stats_tracker.get_stats(), 'save_states': self.game_manager.save_states}
-            with open(file_path, 'w') as f:
-                json.dump(data, f, indent=4)
-            self.statusBar().showMessage(f"Session saved successfully to {file_path}", 5000)
-            self.save_last_session(self.current_session_name)
+    def create_new_session(self):
+        new_session_name, ok = QInputDialog.getText(self, 'Create New Session', 'Enter new session name:')
+        if ok and new_session_name:
+            new_session_path = self.get_session_path(new_session_name)
+            if os.path.exists(new_session_path):
+                QMessageBox.warning(self, "Session Creation Error", f"The session '{new_session_name}' already exists.")
+                return
+    
+            os.makedirs(new_session_path, exist_ok=True)
+            save_states_path = os.path.join(new_session_path, 'savestates')
+            os.makedirs(save_states_path, exist_ok=True)
+    
+            session_file_path = os.path.join(new_session_path, 'session.json')
+            session_data = {
+                'name': new_session_name,
+                'games': [],
+                'stats': {},
+                'save_states': {}
+            }
+    
+            with open(session_file_path, 'w') as f:
+                json.dump(session_data, f, indent=4)
+    
+            self.current_session_name = new_session_name
+            self.refresh_ui()
+            self.populate_session_dropdown()
+            QMessageBox.information(self, "Session Created", f"Session '{new_session_name}' has been created successfully.")
+                
+    def save_current_session(self):
+        if not self.current_session_name:
+            QMessageBox.warning(self, "Save Error", "No session is currently loaded.")
+            return
+    
+        session_folder = self.get_session_path(self.current_session_name)
+        session_file = os.path.join(session_folder, 'session.json')
+    
+        # Gather the current session data
+        session_data = {
+            'name': self.current_session_name,
+            'games': self.game_manager.get_current_games(),
+            'stats': self.stat_tracker.get_current_stats(),
+            'save_states': self.game_manager.get_current_save_states()
+        }
+    
+        # Save the session data to 'session.json'
+        with open(session_file, 'w') as f:
+            json.dump(session_data, f, indent=4)
+    
+        self.statusBar().showMessage(f"Session '{self.current_session_name}' saved successfully.", 5000)
             
     def delete_current_session(self):
         """Delete the currently loaded session"""
@@ -860,48 +995,52 @@ class MainWindow(QMainWindow):
             
 
     def get_session_path(self, session_name):
-        return os.path.join(self.session_manager.directory, session_name)
+        return os.path.join('sessions', session_name)  # Adjust the path as necessary
             
     def update_session_info(self):
         if not self.current_session_name:
             self.session_info_label.setText("No session available.")
+            logging.debug("update_session_info called with no current session name set.")
             return
 
-        session_file = self.get_session_path(f"{self.current_session_name}.json")
-        if not os.path.exists(session_file):
+        session_data = self.session_manager.get_session_info(self.current_session_name)
+
+        if not session_data:
             self.session_info_label.setText(f"Session file for '{self.current_session_name}' does not exist.")
+            logging.debug(f"Session data for '{self.current_session_name}' could not be found.")
             return
 
         try:
-            with open(session_file, 'r') as file:
-                session_data = json.load(file)
-                session_name = session_data['name']
-                game_count = len(session_data['games'])
-                completed_game_count = sum(1 for game in session_data['games'].values() if game['completed'])
+            session_name = session_data['name']
+            games = session_data['games']
+            game_count = len(games)
+            logging.debug(f"Session '{session_name}' has {game_count} games.")
+
+            # Corrected line: Use games.values() to iterate over dictionary values
+            completed_game_count = sum(1 for game in games.values() if game.get('completed', False))
+            logging.debug(f"Session '{session_name}' has {completed_game_count} completed games.")
+    
+            # Check if 'stats' has the expected three elements, otherwise use default values
+            if 'stats' in session_data and len(session_data['stats']) == 3:
                 game_stats, total_swaps, total_time = session_data['stats']
-
-                # Formatting total_time to HH:MM:SS 
-                formatted_total_time = self.stat_tracker.format_time(total_time)
-
-                # Add completed_game_count to the label text
-                self.session_info_label.setText(f"Session: {session_name}\n" +
-                                                f"Games: {game_count}\n" +
-                                                f"Completed: {completed_game_count}\n" +  # <-- New line for completed games
-                                                f"Swaps: {total_swaps}\n" +
-                                                f"Time: {formatted_total_time}")
-        except FileNotFoundError:
-            # This exception handler should never be reached due to the earlier check,
-            # but it's kept as a safeguard.
-            self.session_info_label.setText(f"Session: {self.current_session_name}\n" +
-                                            f"Games: 0\n" +
-                                            f"Swaps: 0\n" +
-                                            f"Time: 00:00:00\n" +
-                                            "Session file does not exist.")
-        except json.JSONDecodeError:
-            QMessageBox.warning(self, "Load Error", "Failed to load the session file. It may be corrupted.")
+            else:
+                game_stats = {}  # Default empty dictionary for game_stats
+                total_swaps = 0  # Default zero for total_swaps
+                total_time = 0   # Default zero for total_time
+                logging.debug(f"Session '{session_name}' stats are missing or incomplete. Using default values.")
+    
+            # Formatting total_time to HH:MM:SS using a method assumed to be defined elsewhere in MainWindow
+            formatted_total_time = self.stat_tracker.format_time(total_time)
+    
+            self.session_info_label.setText(f"Session: {session_name}\n" +
+                                            f"Games: {game_count}\n" +
+                                            f"Completed: {completed_game_count}\n" +
+                                            f"Swaps: {total_swaps}\n" +
+                                            f"Time: {formatted_total_time}")
         except Exception as e:
-            logging.error(f"An unexpected error occurred while loading the session: {e}")
-            self.statusBar().showMessage("An unexpected error occurred while loading the session.", 5000)
+            logging.error(f"An unexpected error occurred while updating the session info: {e}")
+            self.session_info_label.setText("An error occurred while loading session details.")
+
 
 
     def update_and_save_session(self):
@@ -920,8 +1059,9 @@ class MainWindow(QMainWindow):
             'save_states': self.game_manager.save_states
         }
 
-        # Construct the file path for the session file using the directory attribute and session name
-        session_file_path = os.path.join(self.session_manager.directory, f"{self.current_session_name}.json")
+        session_folder = self.get_session_path(self.current_session_name)
+        os.makedirs(session_folder, exist_ok=True)  # Ensure the session folder exists
+        session_file_path = os.path.join(session_folder, 'session.json')
 
         # Use the SessionManager to save the session to disk
         self.session_manager.save_session(self.current_session_name, session_data['games'], 
@@ -963,6 +1103,49 @@ class MainWindow(QMainWindow):
         else:
             self.create_default_session()           
             
+            
+    def save_current_session_as_new(self):
+        new_session_name, ok = QInputDialog.getText(self, 'Save Current Session As', 'Enter new session name:')
+        if ok and new_session_name:
+            new_session_path = self.get_session_path(new_session_name)
+    
+            if os.path.exists(new_session_path):
+                QMessageBox.warning(self, "Session Creation Error", f"The session '{new_session_name}' already exists.")
+                return
+    
+            # Copy the current session to the new session folder
+            try:
+                # Create new session directory and savestates subdirectory
+                os.makedirs(new_session_path, exist_ok=False)
+                save_states_path = os.path.join(new_session_path, 'savestates')
+                os.makedirs(save_states_path, exist_ok=True)
+    
+                # Assuming you have a method to get the current session data
+                current_session_data = self.get_current_session_data()
+                
+                # Adjust the 'name' in the session data
+                current_session_data['name'] = new_session_name
+    
+                # Save the session data to 'session.json' in the new session folder
+                session_file_path = os.path.join(new_session_path, 'session.json')
+                with open(session_file_path, 'w') as f:
+                    json.dump(current_session_data, f, indent=4)
+    
+                # Copy savestates from the current session to the new session
+                current_save_states_path = os.path.join(self.get_session_path(self.current_session_name), 'savestates')
+                for save_state_file in os.listdir(current_save_states_path):
+                    shutil.copy2(os.path.join(current_save_states_path, save_state_file), save_states_path)
+    
+                QMessageBox.information(self, "Session Saved", f"Current session has been saved as '{new_session_name}' successfully.")
+    
+                # Update the UI
+                self.populate_session_dropdown()
+                self.session_dropdown.setCurrentText(new_session_name)
+                self.current_session_name = new_session_name
+                self.refresh_ui()
+    
+            except Exception as e:
+                QMessageBox.warning(self, "Save Error", f"Failed to save the current session as '{new_session_name}'. Error: {e}")
             
     def create_twitch_integration_tab(self):
         tab = QWidget()
