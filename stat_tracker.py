@@ -45,12 +45,13 @@ class StatsTracker:
         print("[DEBUG] Writing individual stats to files")
         stats_output_path = os.path.join(session_path, 'output')
         os.makedirs(stats_output_path, exist_ok=True)
-    
+
         # Write each individual game stat to separate files for swaps and formatted time
-        for game_name, stats in self.game_stats.items():
-            print(f"[DEBUG] Writing stats for {game_name}")
-            swaps_file_path = os.path.join(stats_output_path, f'{game_name}_swaps.txt')
-            time_file_path = os.path.join(stats_output_path, f'{game_name}_time.txt')
+        for game_path, stats in self.game_stats.items():
+            game_filename = os.path.splitext(os.path.basename(game_path))[0]
+            print(f"[DEBUG] Writing stats for {game_filename}")
+            swaps_file_path = os.path.join(stats_output_path, f'{game_filename}_swaps.txt')
+            time_file_path = os.path.join(stats_output_path, f'{game_filename}_time.txt')
             with open(swaps_file_path, 'w') as f_swaps, open(time_file_path, 'w') as f_time:
                 f_swaps.write(f"{stats['swaps']}")
                 formatted_time = self.format_time(stats['time_spent'])
@@ -80,6 +81,6 @@ class StatsTracker:
                 f_time.write(f"{formatted_current_game_time}")
                 f_name.write(current_game_name)  # Write the current game name to the new file
                 
-    
+
                 
                     

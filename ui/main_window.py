@@ -334,7 +334,7 @@ class MainWindow(QMainWindow):
         old_name = item.text()  # This assumes that item.text() is the old game name
         path = self.find_game_path_by_name(old_name)
         if path:
-            self.game_manager.rename_game(path, old_name, new_name)
+            self.game_manager.rename_game(path, new_name)
             self.refresh_game_list()
             
     def find_game_path_by_name(self, name):
