@@ -1,5 +1,5 @@
-from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QLineEdit, QMenu, QComboBox
+from PySide6.QtWidgets import QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit, QGroupBox
+from PySide6.QtWidgets import QPushButton, QListWidget, QFileDialog, QLineEdit, QMenu, QComboBox, QHBoxLayout, QFormLayout
 from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
@@ -9,7 +9,7 @@ from ui.style import Style
 import Python_Client
 
 import os, random, subprocess, time, json, sys, logging
-import psutil, shutil
+import psutil, shutil, keyboard
 
 SUPPORTED_EXTENSIONS = (
     '.nes', '.snes', '.gbc', '.gba', '.md', '.nds',
@@ -61,6 +61,15 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_bar.addWidget(self.status_label, 1)
         
+    def apply_selected_style(self):
+        selected_style = self.style_selector.currentText().lower()
+        if selected_style == 'dark':
+            Style.set_dark_style(self)
+        elif selected_style == 'light':
+            Style.set_light_style(self)
+        # Save the selected style to the configuration
+        self.config['style'] = selected_style
+        self.config_manager.save_config(self.config)
                       
 
     def init_tabs(self):
@@ -79,33 +88,68 @@ class MainWindow(QMainWindow):
     def create_game_management_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        layout.setSpacing(10)
     
+        # Search input with label
+        search_group = QGroupBox("Search Games")
+        search_layout = QHBoxLayout(search_group)
+        search_layout.setSpacing(5)
+        search_layout.setContentsMargins(10, 20, 10, 10)  # Adjust the top margin as necessary
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Search games...")
         self.search_input.textChanged.connect(self.filter_games)
-        layout.addWidget(self.search_input)
+        search_layout.addWidget(QLabel("Search:"))
+        search_layout.addWidget(self.search_input)
+        layout.addWidget(search_group)
     
+        # Buttons for managing games
+        manage_group = QGroupBox("Manage Games")
+        manage_layout = QHBoxLayout(manage_group)
+        manage_layout.setSpacing(5)
+        manage_layout.setContentsMargins(10, 20, 10, 10)  # Adjust the top margin as necessary
         add_games_button = QPushButton("Add Games")
         add_games_button.clicked.connect(self.add_games)
-        layout.addWidget(add_games_button)
-    
         add_directory_button = QPushButton("Add Games from Directory")
         add_directory_button.clicked.connect(self.add_games_from_directory)
-        layout.addWidget(add_directory_button)
+        manage_layout.addWidget(add_games_button)
+        manage_layout.addWidget(add_directory_button)
+        layout.addWidget(manage_group)
     
+    # New group box for games list and game details
+        games_info_group_box = QGroupBox("Games")
+        games_info_layout = QVBoxLayout(games_info_group_box)
+
+        # Game list
         self.game_list = QListWidget()
         self.game_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.game_list.customContextMenuRequested.connect(self.show_game_context_menu)
-        self.game_list.itemSelectionChanged.connect(self.display_game_details)  # Connect to display game details method
-        layout.addWidget(self.game_list)
-    
-        self.game_list.itemDoubleClicked.connect(self.handle_double_click)
-    
-        # Create a label to display the selected game's details
+        self.game_list.itemSelectionChanged.connect(self.display_game_details)
+        games_info_layout.addWidget(self.game_list)
+
+        # Game details label
         self.game_details_label = QLabel("Select a game to view details")
-        layout.addWidget(self.game_details_label)
-    
+        games_info_layout.addWidget(self.game_details_label)
+
+        # Add the new group box to the main layout
+        layout.addWidget(games_info_group_box)
+
+        layout.addStretch()  # Push everything up
+
         return tab
+
+
+    def setup_hotkey_listener(self):
+        hotkey = self.config.get('toggle_complete_hotkey', 'ctrl+t')
+        keyboard.add_hotkey(hotkey, self.toggle_current_game_complete)
+
+    def toggle_current_game_complete(self):
+        # Logic to toggle the 'completed' status of the current game
+        if self.current_game_path:
+            if self.game_manager.games[self.current_game_path].get('completed'):
+                self.game_manager.mark_game_as_not_completed(self.current_game_path)
+            else:
+                self.game_manager.mark_game_as_completed(self.current_game_path)
+            self.refresh_game_list()  # Update the UI
 
     def show_game_context_menu(self, pos):
         menu = QMenu(self)
@@ -166,7 +210,7 @@ class MainWindow(QMainWindow):
                 self.refresh_game_list()    
     
     def filter_games(self):
-        search_text = self.search_bar.text().lower()
+        search_text = self.search_input.text().lower()  # Corrected from self.search_bar to self.search_input
         for i in range(self.game_list.count()):
             item = self.game_list.item(i)
             item.setHidden(search_text not in item.text().lower())
@@ -206,68 +250,70 @@ class MainWindow(QMainWindow):
             self.game_details_label.setText("Select a game to view details")   
 
     def add_games(self):
-        app_root = os.path.dirname(sys.modules['__main__'].__file__)
-        games_dir = os.path.join(app_root, "games")
-        if not os.path.exists(games_dir):
-            os.makedirs(games_dir)
-            print("Created games directory:", games_dir)
-    
-        file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", games_dir, 
-                                                     "Game Files (*.nes *.snes *.gbc *.gba *.md *.nds)")
-        added_any = False
-        for file_name in file_names:
-            # Check if the game file has a supported extension
-            if any(file_name.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
-                normalized_path = os.path.abspath(file_name)
-            if normalized_path not in self.game_manager.games:
-                # Add the game to the game manager
-                self.game_manager.add_game(normalized_path)
-                print("Added game:", normalized_path)
-                added_any = True
-            else:
-                print("Duplicate Game", f"{os.path.basename(file_name)} is already in the list.")
-
-        if added_any:
-            # Refresh the UI and update the session after adding games
-            self.refresh_ui()
-            self.update_and_save_session()  # Update session data and save using the unified function
-            print("UI refreshed and session updated.")
-            
-            
-
-    def add_games_from_directory(self):
-        app_root = os.path.dirname(sys.modules['__main__'].__file__)
-        games_dir = os.path.join(app_root, "games")
-        if not os.path.exists(games_dir):
-            os.makedirs(games_dir)
-            print("Created games directory:", games_dir)
-    
-        directory = QFileDialog.getExistingDirectory(self, "Select Directory", games_dir, 
-                                                      QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
-        if directory:
-            print("Selected directory for adding games:", directory)
+        try:
+            app_root = os.path.dirname(sys.modules['__main__'].__file__)
+            games_dir = os.path.join(app_root, "games")
+            if not os.path.exists(games_dir):
+                os.makedirs(games_dir)
+        
+            file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", games_dir, 
+                                                         "Game Files (*.nes *.snes *.gbc *.gba *.md *.nds)")
             added_any = False
-            # Get a list of all files in the selected directory
-            for file_name in os.listdir(directory):
-                file_path = os.path.join(directory, file_name)
-                if os.path.isfile(file_path):
-                    # Check if the game file has a supported extension
-                    if any(file_path.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
-                        normalized_path = os.path.abspath(file_path)
-                        # Check if the game already exists in the list
-                        if normalized_path not in self.game_manager.games:
-                            # Add the game to the game manager
-                            self.game_manager.add_game(normalized_path)
-                            print("Added game:", normalized_path)
-                            added_any = True
-                        else:
-                            print("Duplicate Game", f"{os.path.basename(file_name)} is already in the list.")
+            for file_name in file_names:
+                # Check if the game file has a supported extension
+                if any(file_name.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+                    normalized_path = os.path.abspath(file_name)
+                if normalized_path not in self.game_manager.games:
+                    # Add the game to the game manager
+                    self.game_manager.add_game(normalized_path)
+                    print("Added game:", normalized_path)
+                    added_any = True
+                else:
+                    logging.info(f"Game {os.path.basename(file_name)} is already in the list.")
 
             if added_any:
                 # Refresh the UI and update the session after adding games
                 self.refresh_ui()
-                self.update_and_save_session()  # Update session data and save using the unified function
-                print("UI refreshed and session updated.")
+                self.update_and_save_session()
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while adding games: {e}")
+
+            
+            
+
+    def add_games_from_directory(self):
+        try:
+            app_root = os.path.dirname(sys.modules['__main__'].__file__)
+            games_dir = os.path.join(app_root, "games")
+            if not os.path.exists(games_dir):
+                os.makedirs(games_dir)
+        
+            directory = QFileDialog.getExistingDirectory(self, "Select Directory", games_dir, 
+                                                          QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+            if directory:
+                logging.info(f"Selected directory: {directory}")
+                added_any = False
+                # Get a list of all files in the selected directory
+                for file_name in os.listdir(directory):
+                    file_path = os.path.join(directory, file_name)
+                    if os.path.isfile(file_path):
+                        # Check if the game file has a supported extension
+                        if any(file_path.lower().endswith(ext) for ext in SUPPORTED_EXTENSIONS):
+                            normalized_path = os.path.abspath(file_path)
+                            # Check if the game already exists in the list
+                            if normalized_path not in self.game_manager.games:
+                                # Add the game to the game manager
+                                self.game_manager.add_game(normalized_path)
+                                added_any = True
+                            else:
+                                logging.info(f"Game {os.path.basename(file_path)} is already in the list.")
+
+                if added_any:
+                    # Refresh the UI and update the session after adding games
+                    self.refresh_ui()
+                    self.update_and_save_session()
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while adding games from directory: {e}")
 
                 
 
@@ -282,9 +328,7 @@ class MainWindow(QMainWindow):
                 self.game_manager.remove_game(game_path)
 
         self.refresh_ui()
-        self.update_and_save_session()  # Save the session after removing the game
-
-# e:/Coding/Retro_Roulette/ui/main_window.py:MainWindow.mark_game_as_completed
+        self.update_and_save_session()  
     def mark_game_as_completed(self):
         selected_items = self.game_list.selectedItems()
         if not selected_items:
@@ -297,7 +341,7 @@ class MainWindow(QMainWindow):
                 self.game_manager.mark_game_as_completed(game_path)
 
         self.refresh_ui()
-        self.update_and_save_session()  # Save the session after marking the game as completed
+        self.update_and_save_session()  
         
         
     def unmark_game_as_not_completed(self):
@@ -605,33 +649,70 @@ class MainWindow(QMainWindow):
 
     def create_configuration_tab(self):
         tab = QWidget()
-        layout = QVBoxLayout(tab)
+        main_layout = QVBoxLayout(tab)
+        main_layout.setSpacing(10)
+        main_layout.setAlignment(Qt.AlignTop) 
+    
+       
+        style_group_box = QGroupBox("Appearance")
+        style_group_box.setMinimumHeight(100)  
+        style_layout = QFormLayout(style_group_box)
+        style_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        style_layout.setRowWrapPolicy(QFormLayout.DontWrapRows)
+        style_layout.setLabelAlignment(Qt.AlignLeft)
+        style_layout.setFormAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        style_layout.setVerticalSpacing(20)
+        self.style_selector = QComboBox()
+        self.style_selector.addItems(["Dark", "Light"])
+        current_style = self.config.get('style', 'dark')
+        self.style_selector.setCurrentText(current_style.capitalize())
+        self.style_selector.currentIndexChanged.connect(self.apply_selected_style)
+        style_layout.addRow(QLabel("Select UI Style:"), self.style_selector)
+        main_layout.addWidget(style_group_box)
+    
         
-        #TODO add checkbox and logic to allow duplicate games in game list
-        #TODO add ui color customization options for text, background, and font
-        
-
-        # Set up the BizHawk path input and button
+        bizhawk_group_box = QGroupBox("BizHawk Settings")
+        bizhawk_group_box.setMinimumHeight(100)  
+        bizhawk_layout = QFormLayout(bizhawk_group_box)
+        bizhawk_layout.setVerticalSpacing(20)
+        bizhawk_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         self.bizhawk_path_input = QLineEdit(self.config.get('bizhawk_path', ''))
+        self.bizhawk_path_input.setPlaceholderText("Path to BizHawk executable")
         browse_button = QPushButton("Browse")
         browse_button.clicked.connect(self.browse_bizhawk_path)
-        layout.addWidget(self.bizhawk_path_input)
-        layout.addWidget(browse_button)
-
-        # Set up the min and max interval inputs
+        bizhawk_layout.addRow(QLabel("BizHawk Path:"), self.bizhawk_path_input)
+        bizhawk_layout.addWidget(browse_button)
+        main_layout.addWidget(bizhawk_group_box)
+    
+        
+        shuffle_interval_group_box = QGroupBox("Shuffle Intervals")
+        shuffle_interval_group_box.setMinimumHeight(100)  
+        shuffle_interval_layout = QFormLayout(shuffle_interval_group_box)
+        shuffle_interval_layout.setVerticalSpacing(20)
         self.min_interval_input = QLineEdit(str(self.config.get('min_shuffle_interval', '30')))
         self.max_interval_input = QLineEdit(str(self.config.get('max_shuffle_interval', '60')))
-        layout.addWidget(self.min_interval_input)
-        layout.addWidget(self.max_interval_input)
-
-        # Set up the save and load buttons
+        shuffle_interval_layout.addRow(QLabel("Minimum Interval (seconds):"), self.min_interval_input)
+        shuffle_interval_layout.addRow(QLabel("Maximum Interval (seconds):"), self.max_interval_input)
+        main_layout.addWidget(shuffle_interval_group_box)
+         
+        hotkey_group_box = QGroupBox("Hotkeys")
+        hotkey_layout = QFormLayout(hotkey_group_box)
+        hotkey_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        self.toggle_complete_hotkey_input = QLineEdit(self.config.get('toggle_complete_hotkey', 'Ctrl+T'))
+        self.toggle_complete_hotkey_input.setPlaceholderText("Enter hotkey (e.g., Ctrl+T)")
+        hotkey_layout.addRow(QLabel("Toggle Complete Hotkey:"), self.toggle_complete_hotkey_input)
+        save_hotkey_button = QPushButton("Save Hotkey")
+        save_hotkey_button.clicked.connect(self.save_hotkey_configuration)
+        hotkey_layout.addWidget(save_hotkey_button)
+        main_layout.addWidget(hotkey_group_box)
+    
+        
         save_config_button = QPushButton("Save Configuration")
         save_config_button.clicked.connect(self.save_configuration)
-        load_config_button = QPushButton("Load Configuration")
-        load_config_button.clicked.connect(self.load_configuration)
-        layout.addWidget(save_config_button)
-        layout.addWidget(load_config_button)
-
+        main_layout.addWidget(save_config_button)
+    
+        main_layout.addStretch() 
+    
         return tab
 
 
@@ -640,6 +721,14 @@ class MainWindow(QMainWindow):
         if path:
             self.bizhawk_path_input.setText(path)
 
+
+    def save_hotkey_configuration(self):
+        hotkey = self.toggle_complete_hotkey_input.text()
+        # Validate the hotkey format here if necessary
+        # ...
+        self.config['toggle_complete_hotkey'] = hotkey
+        self.config_manager.save_config(self.config)
+        self.setup_hotkey_listener()  # Re-setup the hotkey listener with the new hotkey    
 
     def save_configuration(self):
         # Collect configuration data from UI elements
