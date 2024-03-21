@@ -75,9 +75,3 @@ class GameManager:
             self.games[path]['completed'] = False
             self.save_games()
             
-    def get_game_paths(self):
-        return list(self.games.keys())
-    
-    def get_game_goals(self, path):
-        if path in self.games:
-            return self.games[path]['goals']
