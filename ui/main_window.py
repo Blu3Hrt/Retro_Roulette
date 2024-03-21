@@ -681,12 +681,23 @@ class MainWindow(QMainWindow):
 
         save_config_button = QPushButton("Save Configuration")
         save_config_button.clicked.connect(self.save_configuration)
+        
+        load_default_config_button = QPushButton("Load Default Config")
+        load_default_config_button.clicked.connect(self.load_default_config)
+                
 
         [main_layout.addWidget(group_box) for group_box in [style_group_box, bizhawk_group_box, shuffle_interval_group_box, hotkey_group_box]]
         main_layout.addWidget(save_config_button)
+        main_layout.addWidget(load_default_config_button)
         main_layout.addStretch()
 
         return tab
+    
+    def load_default_config(self):
+        self.config = self.config_manager.default_config()
+        self.config_manager.save_config(self.config)
+        self.statusBar().showMessage("The configuration has been reset to the default settings.")
+        # You may want to update the UI elements to reflect the default configuration here    
 
     def browse_bizhawk_path(self):
         if path := QFileDialog.getOpenFileName(
@@ -781,10 +792,10 @@ class MainWindow(QMainWindow):
         self.stats_preferences['individual_game_stats'] = self.output_individual_game_stats_checkbox.isChecked()
         self.stats_preferences['total_stats'] = self.output_total_stats_checkbox.isChecked()
         self.stats_preferences['current_game_stats'] = self.output_current_game_stats_checkbox.isChecked()
-
+    
         # Update the main config dictionary
         self.config['stats_preferences'] = self.stats_preferences
-
+    
         # Save the updated configuration
         self.config_manager.save_config(self.config)
 

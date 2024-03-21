@@ -33,3 +33,4 @@ class ConfigManager:
 
     def get_config_path(self):
         return self.config_file
+
