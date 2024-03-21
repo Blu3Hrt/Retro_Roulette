@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit, QGroupBox,
-                               QPushButton, QListWidget, QFileDialog, QMenu, QComboBox, QHBoxLayout, QFormLayout)
+                               QPushButton, QListWidget, QFileDialog, QMenu, QComboBox, QHBoxLayout, QFormLayout, QCheckBox)
 from PySide6.QtCore import Qt, QTimer, QThread
 from game_manager import GameManager
 from config import ConfigManager
@@ -57,6 +57,16 @@ class MainWindow(QMainWindow):
         self.refresh_ui()
         self.init_timer(self.update_stats_display, 1000)
         self.init_timer(self.update_stats_files, 1000)
+        
+
+        # Initialize stats_preferences with values from the configuration or use default values
+        self.stats_preferences = self.config.get('stats_preferences', {
+            'individual_game_stats': False,
+            'total_stats': True,
+            'current_game_stats': True
+        })
+
+  
         
         
 
@@ -742,18 +752,41 @@ class MainWindow(QMainWindow):
         self.current_game_swaps_label = QLabel("Current Game Swaps: 0")
         self.current_game_time_label = QLabel("Current Game Time: 00:00:00")
         
-        # TODO: Add checkboxes to toggle output of files:
-        #   - Swaps and time for each game "Individual Game Stats" (Off by default)
-        #   - Swaps, time, and name for current game "Current Game Stats" (On by default)
-        #   - Total swaps and time "Total Stats" (On by default)
+        self.output_individual_game_stats_checkbox = QCheckBox("Output Individual Game Stats")
+        self.output_total_stats_checkbox = QCheckBox("Output Total Stats")
+        self.output_current_game_stats_checkbox = QCheckBox("Output Current Game Stats")
+        self.output_individual_game_stats_checkbox.setChecked(False)
+        self.output_total_stats_checkbox.setChecked(True)
+        self.output_current_game_stats_checkbox.setChecked(True)
+        self.output_individual_game_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
+        self.output_total_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
+        self.output_current_game_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
 
         layout.addWidget(self.total_swaps_label)
         layout.addWidget(self.total_time_label)
         layout.addWidget(self.game_name_label)
         layout.addWidget(self.current_game_swaps_label)
         layout.addWidget(self.current_game_time_label)
+        
+        layout.addWidget(self.output_individual_game_stats_checkbox)
+        layout.addWidget(self.output_total_stats_checkbox)
+        layout.addWidget(self.output_current_game_stats_checkbox)
 
         return tab
+
+        
+
+    def update_stats_preferences(self):
+        # Update the stats_preferences attribute based on the state of the checkboxes
+        self.stats_preferences['individual_game_stats'] = self.output_individual_game_stats_checkbox.isChecked()
+        self.stats_preferences['total_stats'] = self.output_total_stats_checkbox.isChecked()
+        self.stats_preferences['current_game_stats'] = self.output_current_game_stats_checkbox.isChecked()
+
+        # Update the main config dictionary
+        self.config['stats_preferences'] = self.stats_preferences
+
+        # Save the updated configuration
+        self.config_manager.save_config(self.config)
 
     def update_stats_display(self):
         if hasattr(self, 'total_swaps_label'):
@@ -788,7 +821,17 @@ class MainWindow(QMainWindow):
             return
         self.current_game_name = self.game_manager.current_game
         session_folder = self.get_session_path(self.current_session_name)
-        self.game_manager.stats_tracker.write_individual_stats_to_files(session_folder, self.current_game_name)
+        stats_tracker = self.game_manager.stats_tracker
+        
+        # Check preferences and write the appropriate stats files
+        if self.stats_preferences.get('individual_game_stats'):
+            stats_tracker.write_individual_game_stats_to_files(session_folder)
+        
+        if self.stats_preferences.get('total_stats'):
+            stats_tracker.write_total_stats_to_files(session_folder)
+        
+        if self.stats_preferences.get('current_game_stats'):
+            stats_tracker.write_current_game_stats_to_files(session_folder, self.current_game_name)
 
 
 
