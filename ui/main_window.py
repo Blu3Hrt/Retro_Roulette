@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit, QGroupBox,
-                               QPushButton, QListWidget, QFileDialog, QMenu, QComboBox, QHBoxLayout, QFormLayout, QCheckBox)
+                               QPushButton, QListWidget, QFileDialog, QMenu, QComboBox, QHBoxLayout, QFormLayout, QCheckBox, QSpinBox)
 from PySide6.QtCore import Qt, QTimer, QThread
 from game_manager import GameManager
 from config import ConfigManager
@@ -1226,9 +1226,72 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.authenticate_button)
         layout.addWidget(self.signout_button)
         layout.addWidget(self.twitch_status_label)
+        
+        self.pause_shuffle_enabled_checkbox = QCheckBox("Enable Pause Shuffle Reward")
+        self.force_swap_enabled_checkbox = QCheckBox("Enable Force Swap Reward")
+        
+        self.pause_shuffle_cost_spinbox = QSpinBox()
+        self.pause_shuffle_cost_spinbox.setRange(0, 10000)  # Set the range as per your requirements
+        self.pause_shuffle_cost_spinbox.setValue(1000)  # Set the default value
+
+        self.force_swap_cost_spinbox = QSpinBox()
+        self.force_swap_cost_spinbox.setRange(0, 10000)
+        self.force_swap_cost_spinbox.setValue(1000)
+        
+        self.pause_shuffle_cooldown_spinbox = QSpinBox()
+        self.pause_shuffle_cooldown_spinbox.setRange(0, 10000)  # Set the range as per your requirements
+        self.pause_shuffle_cooldown_spinbox.setValue(60)  # Set the default value
+
+        self.force_swap_cooldown_spinbox = QSpinBox()
+        self.force_swap_cooldown_spinbox.setRange(0, 10000)
+        self.force_swap_cooldown_spinbox.setValue(60)
+        
+        pause_shuffle_enabled_layout = QHBoxLayout()
+        pause_shuffle_enabled_layout.addWidget(self.pause_shuffle_enabled_checkbox)
+        layout.addLayout(pause_shuffle_enabled_layout)        
+
+        pause_shuffle_cost_layout = QHBoxLayout()
+        pause_shuffle_cost_layout.addWidget(QLabel("Pause Shuffle Reward Cost:"))
+        pause_shuffle_cost_layout.addWidget(self.pause_shuffle_cost_spinbox)
+        layout.addLayout(pause_shuffle_cost_layout)
+
+        pause_shuffle_cooldown_layout = QHBoxLayout()
+        pause_shuffle_cooldown_layout.addWidget(QLabel("Pause Shuffle Cooldown (sec):"))
+        pause_shuffle_cooldown_layout.addWidget(self.pause_shuffle_cooldown_spinbox)
+        layout.addLayout(pause_shuffle_cooldown_layout)
+        
+        force_swap_enabled_layout = QHBoxLayout()
+        force_swap_enabled_layout.addWidget(self.force_swap_enabled_checkbox)
+        layout.addLayout(force_swap_enabled_layout)        
+        
+        force_swap_cost_layout = QHBoxLayout()
+        force_swap_cost_layout.addWidget(QLabel("Force Swap Reward Cost:"))
+        force_swap_cost_layout.addWidget(self.force_swap_cost_spinbox)
+        layout.addLayout(force_swap_cost_layout)
+
+        force_swap_cooldown_layout = QHBoxLayout()
+        force_swap_cooldown_layout.addWidget(QLabel("Force Swap Cooldown (sec):"))
+        force_swap_cooldown_layout.addWidget(self.force_swap_cooldown_spinbox)
+        layout.addLayout(force_swap_cooldown_layout)
+
+        # Replace the "Get Channel Point Rewards" button with a "Create Channel Point Rewards" button
+        self.create_rewards_button = QPushButton("Create/Update Channel Point Rewards")
+        self.create_rewards_button.clicked.connect(self.create_rewards_and_show_feedback)
+
+        layout.addWidget(self.create_rewards_button)
 
         tab.setLayout(layout)
         return tab
+
+    def create_rewards_and_show_feedback(self):
+        pause_shuffle_cost = self.pause_shuffle_cost_spinbox.value()
+        force_swap_cost = self.force_swap_cost_spinbox.value()
+        pause_shuffle_cooldown = self.pause_shuffle_cooldown_spinbox.value()
+        force_swap_cooldown = self.force_swap_cooldown_spinbox.value()
+        pause_shuffle_enabled = self.pause_shuffle_enabled_checkbox.isChecked()
+        force_swap_enabled = self.force_swap_enabled_checkbox.isChecked()
+        self.twitch_integration.create_rewards(pause_shuffle_cost, force_swap_cost, pause_shuffle_cooldown, force_swap_cooldown, pause_shuffle_enabled, force_swap_enabled)
+        QMessageBox.information(self, "Success", "Channel Point Rewards created successfully.")
 
     def authenticate_with_twitch(self):
         self.twitch_integration.open_authentication_url()
@@ -1259,9 +1322,7 @@ class MainWindow(QMainWindow):
         logging.info("on_code_received slot called with code: %s", code)
         try:
             self.twitch_integration.handle_oauth_redirect(code)
-            self.update_twitch_connection_status(True)
-            # Optionally, display the Twitch username
-            self.display_twitch_username()            
+            self.update_twitch_connection_status(True)   
         except Exception as e:
             logging.error("An error occurred in on_code_received: %s", e)    
     
@@ -1284,11 +1345,6 @@ class MainWindow(QMainWindow):
         self.authenticate_button.setEnabled(authenticate_enabled)
         self.signout_button.setEnabled(signout_enabled)
 
-    def display_twitch_username(self):
-        if username := self.twitch_integration.get_twitch_username():
-            self.twitch_username_label.setText(f"Logged in as: {username}")
-        else:
-            self.twitch_username_label.setText("Username not available")
 
 
     def on_auth_failed(self, error_message):
@@ -1296,3 +1352,9 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, "Authentication Failed", error_message)
 
 
+    def get_channel_rewards(self):
+        try:
+            rewards = self.twitch_integration.get_channel_point_rewards()
+            # display the rewards in the UI...
+        except Exception as e:
+            logging.error(f"Failed to get channel point rewards: {e}")    

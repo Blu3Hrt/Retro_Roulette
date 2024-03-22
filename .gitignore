@@ -56,3 +56,4 @@ save_states/
 sessions/
 test.py
 .vscode/settings.json
+.vscode/PythonImportHelper-v2-Completion.json

@@ -85,3 +85,96 @@ class TwitchIntegration:
     def is_authenticated(self):
         access_token, refresh_token = self.get_tokens_securely()
         return bool(access_token) and bool(refresh_token)
+    
+    def get_broadcaster_id(self):
+        access_token, _ = self.get_tokens_securely()
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Client-Id': self.client_id
+        }
+        response = requests.get('https://api.twitch.tv/helix/users', headers=headers)
+        response.raise_for_status()  # raise exception if request failed
+        return response.json()['data'][0]['id']
+
+    def get_rewards(self):
+        broadcaster_id = self.get_broadcaster_id()
+        access_token, _ = self.get_tokens_securely()
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Client-Id': self.client_id
+        }
+        response = requests.get(f'https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={broadcaster_id}', headers=headers)
+        response.raise_for_status()  # raise exception if request failed
+        logging.debug(f"Rewards: {response.json()['data']}")
+        return response.json()['data']    
+    
+    def create_rewards(self, pause_shuffle_cost, force_swap_cost, pause_shuffle_cooldown, force_swap_cooldown, pause_shuffle_enabled, force_swap_enabled):
+        existing_rewards = self.get_rewards()
+
+        pause_shuffle_settings = {
+            'cost': pause_shuffle_cost,
+            'is_global_cooldown_enabled': True,
+            'global_cooldown_seconds': pause_shuffle_cooldown,
+            'should_redemptions_skip_request_queue': True
+        }
+
+        force_swap_settings = {
+            'cost': force_swap_cost,
+            'is_global_cooldown_enabled': True,
+            'global_cooldown_seconds': force_swap_cooldown,
+            'should_redemptions_skip_request_queue': True
+            
+        }
+        
+        pause_shuffle_settings['is_enabled'] = pause_shuffle_enabled
+        force_swap_settings['is_enabled'] = force_swap_enabled        
+
+        if 'Pause Shuffle' not in [reward['title'] for reward in existing_rewards]:
+            self.create_reward('Pause Shuffle', **pause_shuffle_settings)
+        else:
+            self.update_reward('Pause Shuffle', **pause_shuffle_settings)
+
+        if 'Force Swap' not in [reward['title'] for reward in existing_rewards]:
+            self.create_reward('Force Swap', **force_swap_settings)
+        else:
+            self.update_reward('Force Swap', **force_swap_settings)
+
+    def update_reward(self, reward_name, **settings):
+        # get the id of the reward
+        reward_id = next((reward['id'] for reward in self.get_rewards() if reward['title'] == reward_name), None)
+        if reward_id is None:
+            return
+
+        broadcaster_id = self.get_broadcaster_id()
+        access_token, _ = self.get_tokens_securely()
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Client-Id': self.client_id
+        }
+        data = {
+            'broadcaster_id': broadcaster_id,
+            'id': reward_id,
+            **settings
+        }
+        response = requests.patch(f'https://api.twitch.tv/helix/channel_points/custom_rewards?id={reward_id}', headers=headers, json=data)
+        response.raise_for_status()  # raise exception if request failed
+        logging.debug(f"Updated reward: {response.json()['data']}")
+        return response.json()['data']
+            
+
+    def create_reward(self, reward_name, **settings):
+        broadcaster_id = self.get_broadcaster_id()
+        access_token, _ = self.get_tokens_securely()
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Client-Id': self.client_id
+        }
+        data = {
+            'broadcaster_id': broadcaster_id,
+            'title': reward_name,
+            **settings
+        }
+        response = requests.post('https://api.twitch.tv/helix/channel_points/custom_rewards', headers=headers, json=data)
+        response.raise_for_status()  # raise exception if request failed
+        logging.debug(f"Created reward: {response.json()['data']}")
+        return response.json()['data']
