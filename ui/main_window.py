@@ -482,6 +482,7 @@ class MainWindow(QMainWindow):
             self.remaining_shuffle_time = self.shuffle_timer.remainingTime()
             self.shuffle_timer.stop()
             logging.info("Paused shuffle for %d seconds", self.remaining_shuffle_time // 1000)
+            self.statusBar().showMessage("Shuffle paused.")
 
     def resume_shuffle(self):
         if not self.is_shuffling and self.game_manager.games:
@@ -489,9 +490,11 @@ class MainWindow(QMainWindow):
             if self.remaining_shuffle_time is not None:
                 self.shuffle_timer.start(self.remaining_shuffle_time)
                 logging.info("Resumed shuffle for %d seconds", self.remaining_shuffle_time // 1000)
+                self.statusBar().showMessage("Shuffle resumed.")
                 self.remaining_shuffle_time = None
             else:
                 self.shuffle_games()
+
 
 
     def shuffle_games(self):
@@ -931,7 +934,7 @@ class MainWindow(QMainWindow):
             with open(session_file, 'r') as file:
                 self.session_data_load(file)
         except Exception as e:
-            QMessageBox.warning(self, "Load Error", f"Failed to load the session '{session_name}'. It may be corrupted or missing. Error: {e}")            
+            QMessageBox.warning(self, "Load Error", f"Failed to load the session '{session_name}'. It may be corrupted or missing. Error: {e}")          
 
 
     def session_data_load(self, file):
@@ -1075,7 +1078,7 @@ class MainWindow(QMainWindow):
         self.refresh_ui()
         self.save_last_session(new_name)
         self.populate_session_dropdown()
-        self.load_session_from_dropdown(new_name)            
+        self.load_session(new_name)         
 
     def get_session_path(self, session_name):
         return os.path.join('sessions', session_name)  # Adjust the path as necessary
@@ -1233,10 +1236,9 @@ class MainWindow(QMainWindow):
     def create_twitch_integration_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        
-        
+
         if self.twitch_integration.is_authenticated():
-            # Now you can start listening for rewards
+            self.twitch_integration.refresh_access_token()
             self.start_listening_for_rewards()
         else:
             print("User is not authenticated with Twitch.")
@@ -1245,6 +1247,8 @@ class MainWindow(QMainWindow):
         self.authenticate_button.clicked.connect(self.authenticate_with_twitch)
         self.signout_button = QPushButton("Sign out")
         self.signout_button.clicked.connect(self.sign_out_of_twitch)
+        self.create_rewards_button = QPushButton("Create/Update Channel Point Rewards")
+        self.create_rewards_button.clicked.connect(self.create_rewards_and_show_feedback)
 
         self.twitch_status_label = QLabel("Not Authenticated")
 
@@ -1285,24 +1289,30 @@ class MainWindow(QMainWindow):
         self.pause_duration_spinbox.setRange(1, 3600)
         self.pause_duration_spinbox.setValue(30)            
         
+        pause_shuffle_group = QGroupBox("Pause Shuffle Reward Settings")
+        pause_shuffle_layout = QVBoxLayout()
+
         pause_shuffle_enabled_layout = QHBoxLayout()
         pause_shuffle_enabled_layout.addWidget(self.pause_shuffle_enabled_checkbox)
-        layout.addLayout(pause_shuffle_enabled_layout)        
+        pause_shuffle_layout.addLayout(pause_shuffle_enabled_layout)        
 
         pause_shuffle_cost_layout = QHBoxLayout()
         pause_shuffle_cost_layout.addWidget(QLabel("Pause Shuffle Reward Cost:"))
         pause_shuffle_cost_layout.addWidget(self.pause_shuffle_cost_spinbox)
-        layout.addLayout(pause_shuffle_cost_layout)
+        pause_shuffle_layout.addLayout(pause_shuffle_cost_layout)
 
         pause_shuffle_cooldown_layout = QHBoxLayout()
         pause_shuffle_cooldown_layout.addWidget(QLabel("Pause Shuffle Cooldown (sec):"))
         pause_shuffle_cooldown_layout.addWidget(self.pause_shuffle_cooldown_spinbox)
-        layout.addLayout(pause_shuffle_cooldown_layout)
-        
-        pause_duration_spinbox_layout = QHBoxLayout()
-        pause_duration_spinbox_layout.addWidget(QLabel("Pause Duration (sec):"))
-        pause_duration_spinbox_layout.addWidget(self.pause_duration_spinbox)
-        layout.addLayout(pause_duration_spinbox_layout)
+        pause_shuffle_layout.addLayout(pause_shuffle_cooldown_layout)
+
+        pause_shuffle_duration_layout = QHBoxLayout()
+        pause_shuffle_duration_layout.addWidget(QLabel("Pause Duration (sec):"))
+        pause_shuffle_duration_layout.addWidget(self.pause_duration_spinbox)
+        pause_shuffle_layout.addLayout(pause_shuffle_duration_layout)
+
+        pause_shuffle_group.setLayout(pause_shuffle_layout)
+        layout.addWidget(pause_shuffle_group)
         
         
         # UI for "Force Swap" reward
@@ -1324,28 +1334,42 @@ class MainWindow(QMainWindow):
             self.force_swap_cooldown_spinbox.setValue(60)       
         
         
+        force_swap_group = QGroupBox("Force Swap Reward Settings")
+        force_swap_layout = QVBoxLayout()
+
         force_swap_enabled_layout = QHBoxLayout()
         force_swap_enabled_layout.addWidget(self.force_swap_enabled_checkbox)
-        layout.addLayout(force_swap_enabled_layout)        
-        
+        force_swap_layout.addLayout(force_swap_enabled_layout)        
+
         force_swap_cost_layout = QHBoxLayout()
         force_swap_cost_layout.addWidget(QLabel("Force Swap Reward Cost:"))
         force_swap_cost_layout.addWidget(self.force_swap_cost_spinbox)
-        layout.addLayout(force_swap_cost_layout)
+        force_swap_layout.addLayout(force_swap_cost_layout)
 
         force_swap_cooldown_layout = QHBoxLayout()
         force_swap_cooldown_layout.addWidget(QLabel("Force Swap Cooldown (sec):"))
         force_swap_cooldown_layout.addWidget(self.force_swap_cooldown_spinbox)
-        layout.addLayout(force_swap_cooldown_layout)
+        force_swap_layout.addLayout(force_swap_cooldown_layout)
+
+        force_swap_group.setLayout(force_swap_layout)
+        layout.addWidget(force_swap_group)
 
         
-        # Create/Update rewards button
-        self.create_rewards_button = QPushButton("Create/Update Channel Point Rewards")
-        self.create_rewards_button.clicked.connect(self.create_rewards_and_show_feedback)
+
         layout.addWidget(self.create_rewards_button)
 
         tab.setLayout(layout)
         return tab
+
+    def update_twitch_display(self, connected):
+        status_message = "Connected to Twitch" if connected else "Not Connected to Twitch"
+        self.twitch_status_label.setText(status_message)
+        self.authenticate_button.setEnabled(not connected)
+        self.signout_button.setEnabled(connected)
+        self.create_rewards_button.setEnabled(connected)
+        
+        
+    
 
 
     def start_listening_for_rewards(self):
@@ -1363,7 +1387,7 @@ class MainWindow(QMainWindow):
         pause_shuffle_enabled = self.pause_shuffle_enabled_checkbox.isChecked()
         force_swap_enabled = self.force_swap_enabled_checkbox.isChecked()
         self.twitch_integration.create_rewards(pause_shuffle_cost, force_swap_cost, pause_shuffle_cooldown, force_swap_cooldown, pause_shuffle_enabled, force_swap_enabled)
-        QMessageBox.information(self, "Success", "Channel Point Rewards created successfully.")
+        self.statusBar().showMessage("Channel Point Rewards created successfully.")
 
     def authenticate_with_twitch(self):
         self.twitch_integration.open_authentication_url()
@@ -1406,12 +1430,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Sign Out Error", f"An error occurred while signing out: {e}")
 
-    def update_twitch_display(self, connected):
-        status_message = "Connected to Twitch" if connected else "Not Connected to Twitch"
-        self.twitch_status_label.setText(status_message)
-        self.authenticate_button.setEnabled(not connected)
-        self.signout_button.setEnabled(connected)
-
     def set_twitch_connection_status(self, status_message, authenticate_enabled, signout_enabled):
         self.twitch_status_label.setText(status_message)
         self.authenticate_button.setEnabled(authenticate_enabled)
@@ -1427,7 +1445,6 @@ class MainWindow(QMainWindow):
     def get_channel_rewards(self):
         try:
             rewards = self.twitch_integration.get_channel_point_rewards()
-            # display the rewards in the UI...
         except Exception as e:
             logging.error(f"Failed to get channel point rewards: {e}")    
             

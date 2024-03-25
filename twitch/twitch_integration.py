@@ -13,8 +13,6 @@ from PySide6.QtCore import QObject, Signal
 from Python_Client import send_command
 import logging
 
-# TODO: Handle expired refresh tokens
-# TODO: Handle pause shuffle reward
 
 class TwitchIntegration(QObject):
     force_swap_signal = Signal()
@@ -61,6 +59,49 @@ class TwitchIntegration(QObject):
         refresh_token = response_data.get('refresh_token')
         self.save_tokens_securely(access_token, refresh_token)
         logging.info("Tokens saved securely.")
+
+    def refresh_access_token(self):
+        refresh_token = self.get_tokens_securely()[1]
+        if not refresh_token:
+            print("No refresh token available. Please sign in again.")
+            return
+    
+        refresh_url = "https://id.twitch.tv/oauth2/token"
+        params = {
+            'grant_type': 'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id': self.client_id,
+            'client_secret': self.client_secret
+        }
+        response = requests.post(refresh_url, data=params)
+        
+        if response.status_code == requests.codes.ok:
+            new_tokens = response.json()
+            access_token = new_tokens.get('access_token')
+            refresh_token = new_tokens.get('refresh_token')
+            if access_token:
+                self.save_tokens_securely(access_token, refresh_token)
+                print("Token refreshed successfully.")
+            else:
+                print("Failed to refresh token. Please sign in again.")
+        else:
+            print(f"Failed to refresh token: {response.status_code}")
+
+    def make_authenticated_request(self, url):
+        access_token = self.get_tokens_securely()[0]
+        headers = {'Authorization': f'Bearer {access_token}'}
+        response = requests.get(url, headers=headers)
+    
+        if response.status_code == 401:
+            print("Received 401 Client Error. Refreshing access token...")
+            self.refresh_access_token()
+            # Retry the request with the new token
+            access_token = self.get_tokens_securely()[0]
+            headers = {'Authorization': f'Bearer {access_token}'}
+            response = requests.get(url, headers=headers)
+    
+        # Continue processing the response
+        return response
 
 
     def revoke_access_token(self):
@@ -266,8 +307,7 @@ class TwitchIntegration(QObject):
                     self.handle_reward_redemption(reward_id)
                 else:
                     print('No reward ID found in the message.')
-            else:
-                print('Message type is not "reward-redeemed" or "MESSAGE".')
+
         except json.JSONDecodeError:
             print(f'Failed to parse message: {message}')
         except Exception as e:
