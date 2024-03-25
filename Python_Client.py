@@ -1,8 +1,11 @@
 import socket, os
+import logging
 
 sock = None
+logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
 
 def send_command(command):
+    
     global sock
     if sock is None or sock.fileno() == -1:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -14,17 +17,17 @@ def to_absolute_path(relative_path):
 
 def load_rom(rom_path):
     path = to_absolute_path(rom_path)
-    print("Loading ROM from path:", path)
+    logging.info("Loading ROM from path: %s", path)
     send_command(f"loadrom {path}")
     
 def save_state(state_path):
     path = to_absolute_path(state_path)
-    print("Saving state to path:", path)
+    logging.info("Saving state to path: %s", path)
     send_command(f"savestate {path}")
 
 def load_state(state_path):
     path = to_absolute_path(state_path)
-    print("Loading state from path:", path)
+    logging.info("Loading state from path: %s", path)
     send_command(f"loadstate {path}")   
 
 

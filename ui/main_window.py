@@ -37,7 +37,8 @@ class MainWindow(QMainWindow):
         self.config_manager = ConfigManager()     
         self.session_manager = SessionManager()
         self.stat_tracker = StatsTracker()
-        self.twitch_integration = TwitchIntegration()
+        self.is_shuffling = False
+        self.twitch_integration = TwitchIntegration(self)
         self.style_setter = Style()
 
         # Load configuration
@@ -58,6 +59,10 @@ class MainWindow(QMainWindow):
         self.init_timer(self.update_stats_display, 1000)
         self.init_timer(self.update_stats_files, 1000)
         
+        self.shuffle_timer = QTimer()
+        self.shuffle_timer.timeout.connect(self.shuffle_games)
+        self.remaining_shuffle_time = None        
+        
 
         # Initialize stats_preferences with values from the configuration or use default values
         self.stats_preferences = self.config.get('stats_preferences', {
@@ -66,8 +71,9 @@ class MainWindow(QMainWindow):
             'current_game_stats': True
         })
 
-  
-        
+        self.twitch_integration.force_swap_signal.connect(self.force_swap)
+        self.twitch_integration.pause_shuffle_signal.connect(self.pause_shuffle_for_duration)
+
         
 
     def init_ui(self):
@@ -472,12 +478,20 @@ class MainWindow(QMainWindow):
 
     def pause_shuffle(self):
         self.is_shuffling = False
-        # Additional logic to handle pause state
+        if self.shuffle_timer.isActive():
+            self.remaining_shuffle_time = self.shuffle_timer.remainingTime()
+            self.shuffle_timer.stop()
+            logging.info("Paused shuffle for %d seconds", self.remaining_shuffle_time // 1000)
 
     def resume_shuffle(self):
         if not self.is_shuffling and self.game_manager.games:
             self.is_shuffling = True
-            self.shuffle_games()
+            if self.remaining_shuffle_time is not None:
+                self.shuffle_timer.start(self.remaining_shuffle_time)
+                logging.info("Resumed shuffle for %d seconds", self.remaining_shuffle_time // 1000)
+                self.remaining_shuffle_time = None
+            else:
+                self.shuffle_games()
 
 
     def shuffle_games(self):
@@ -510,11 +524,17 @@ class MainWindow(QMainWindow):
         self.current_game_path = next_game_path
         shuffle_interval = self.determine_shuffle_interval()
         logging.info("Scheduling next shuffle in %d seconds", shuffle_interval // 1000)
-        QTimer.singleShot(shuffle_interval, self.shuffle_games)
+        self.shuffle_timer.start(shuffle_interval)
 
         if not self.is_bizhawk_process_running():
             self.pause_shuffle()
 
+    def force_swap(self):
+        if self.is_shuffling:
+            self.shuffle_games()
+            shuffle_interval = self.determine_shuffle_interval()
+        else:
+            logging.warning("Shuffling is not active. Cannot force swap.")
 
     def _handle_shuffle_unavailability(self, available_games):
         logging.info("Cannot shuffle: Only one game available or all games are completed.")
@@ -1213,6 +1233,13 @@ class MainWindow(QMainWindow):
     def create_twitch_integration_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
+        
+        
+        if self.twitch_integration.is_authenticated():
+            # Now you can start listening for rewards
+            self.start_listening_for_rewards()
+        else:
+            print("User is not authenticated with Twitch.")
 
         self.authenticate_button = QPushButton("Sign in with Twitch")
         self.authenticate_button.clicked.connect(self.authenticate_with_twitch)
@@ -1221,30 +1248,42 @@ class MainWindow(QMainWindow):
 
         self.twitch_status_label = QLabel("Not Authenticated")
 
-        self.update_twitch_connection_status(self.twitch_integration.is_authenticated())
+        self.update_twitch_display(self.twitch_integration.is_authenticated())
 
         layout.addWidget(self.authenticate_button)
         layout.addWidget(self.signout_button)
         layout.addWidget(self.twitch_status_label)
+
+        # Fetch current Twitch rewards
+        current_rewards = self.twitch_integration.get_rewards() if self.twitch_integration.is_authenticated() else []
+
+        # Find "Pause Shuffle" and "Force Swap" rewards if they exist
+        pause_shuffle_reward = next((reward for reward in current_rewards if reward['title'] == "Pause Shuffle"), None)
+        force_swap_reward = next((reward for reward in current_rewards if reward['title'] == "Force Swap"), None)
         
+        
+        
+        # UI for "Pause Shuffle" reward
         self.pause_shuffle_enabled_checkbox = QCheckBox("Enable Pause Shuffle Reward")
-        self.force_swap_enabled_checkbox = QCheckBox("Enable Force Swap Reward")
-        
         self.pause_shuffle_cost_spinbox = QSpinBox()
-        self.pause_shuffle_cost_spinbox.setRange(0, 10000)  # Set the range as per your requirements
-        self.pause_shuffle_cost_spinbox.setValue(1000)  # Set the default value
-
-        self.force_swap_cost_spinbox = QSpinBox()
-        self.force_swap_cost_spinbox.setRange(0, 10000)
-        self.force_swap_cost_spinbox.setValue(1000)
-        
+        self.pause_shuffle_cost_spinbox.setRange(0, 10000)
         self.pause_shuffle_cooldown_spinbox = QSpinBox()
-        self.pause_shuffle_cooldown_spinbox.setRange(0, 10000)  # Set the range as per your requirements
-        self.pause_shuffle_cooldown_spinbox.setValue(60)  # Set the default value
+        self.pause_shuffle_cooldown_spinbox.setRange(0, 10000)
 
-        self.force_swap_cooldown_spinbox = QSpinBox()
-        self.force_swap_cooldown_spinbox.setRange(0, 10000)
-        self.force_swap_cooldown_spinbox.setValue(60)
+        # Set values from the API or use defaults
+        if pause_shuffle_reward is not None:
+            self.pause_shuffle_enabled_checkbox.setChecked(pause_shuffle_reward.get('is_enabled', True))
+            self.pause_shuffle_cost_spinbox.setValue(pause_shuffle_reward.get('cost', 1000))
+            pause_shuffle_cooldown = pause_shuffle_reward.get('global_cooldown_setting', {}).get('global_cooldown_seconds', 60)
+            self.pause_shuffle_cooldown_spinbox.setValue(pause_shuffle_cooldown)
+        else:
+            self.pause_shuffle_enabled_checkbox.setChecked(True)
+            self.pause_shuffle_cost_spinbox.setValue(1000)
+            self.pause_shuffle_cooldown_spinbox.setValue(60)
+       
+        self.pause_duration_spinbox = QSpinBox()
+        self.pause_duration_spinbox.setRange(1, 3600)
+        self.pause_duration_spinbox.setValue(30)            
         
         pause_shuffle_enabled_layout = QHBoxLayout()
         pause_shuffle_enabled_layout.addWidget(self.pause_shuffle_enabled_checkbox)
@@ -1260,6 +1299,31 @@ class MainWindow(QMainWindow):
         pause_shuffle_cooldown_layout.addWidget(self.pause_shuffle_cooldown_spinbox)
         layout.addLayout(pause_shuffle_cooldown_layout)
         
+        pause_duration_spinbox_layout = QHBoxLayout()
+        pause_duration_spinbox_layout.addWidget(QLabel("Pause Duration (sec):"))
+        pause_duration_spinbox_layout.addWidget(self.pause_duration_spinbox)
+        layout.addLayout(pause_duration_spinbox_layout)
+        
+        
+        # UI for "Force Swap" reward
+        self.force_swap_enabled_checkbox = QCheckBox("Enable Force Swap Reward")
+        self.force_swap_cost_spinbox = QSpinBox()
+        self.force_swap_cost_spinbox.setRange(0, 10000)
+        self.force_swap_cooldown_spinbox = QSpinBox()
+        self.force_swap_cooldown_spinbox.setRange(0, 10000)
+
+        # Set values from the API or use defaults
+        if force_swap_reward is not None:
+            self.force_swap_enabled_checkbox.setChecked(force_swap_reward.get('is_enabled', True))
+            self.force_swap_cost_spinbox.setValue(force_swap_reward.get('cost', 1000))
+            force_swap_cooldown = force_swap_reward.get('global_cooldown_setting', {}).get('global_cooldown_seconds', 60)
+            self.force_swap_cooldown_spinbox.setValue(force_swap_cooldown)
+        else:
+            self.force_swap_enabled_checkbox.setChecked(True)
+            self.force_swap_cost_spinbox.setValue(1000)
+            self.force_swap_cooldown_spinbox.setValue(60)       
+        
+        
         force_swap_enabled_layout = QHBoxLayout()
         force_swap_enabled_layout.addWidget(self.force_swap_enabled_checkbox)
         layout.addLayout(force_swap_enabled_layout)        
@@ -1274,15 +1338,23 @@ class MainWindow(QMainWindow):
         force_swap_cooldown_layout.addWidget(self.force_swap_cooldown_spinbox)
         layout.addLayout(force_swap_cooldown_layout)
 
-        # Replace the "Get Channel Point Rewards" button with a "Create Channel Point Rewards" button
+        
+        # Create/Update rewards button
         self.create_rewards_button = QPushButton("Create/Update Channel Point Rewards")
         self.create_rewards_button.clicked.connect(self.create_rewards_and_show_feedback)
-
         layout.addWidget(self.create_rewards_button)
 
         tab.setLayout(layout)
         return tab
 
+
+    def start_listening_for_rewards(self):
+        if self.twitch_integration.is_authenticated():
+            # Start listening for rewards in a separate thread
+            threading.Thread(target=self.twitch_integration.listen_for_rewards, daemon=True).start()
+        else:
+            print("User is not authenticated with Twitch.")
+            
     def create_rewards_and_show_feedback(self):
         pause_shuffle_cost = self.pause_shuffle_cost_spinbox.value()
         force_swap_cost = self.force_swap_cost_spinbox.value()
@@ -1322,7 +1394,7 @@ class MainWindow(QMainWindow):
         logging.info("on_code_received slot called with code: %s", code)
         try:
             self.twitch_integration.handle_oauth_redirect(code)
-            self.update_twitch_connection_status(True)   
+            self.update_twitch_display(True)   
         except Exception as e:
             logging.error("An error occurred in on_code_received: %s", e)    
     
@@ -1330,11 +1402,11 @@ class MainWindow(QMainWindow):
         try:
             self.twitch_integration.revoke_access_token()
             self.twitch_integration.clear_tokens_securely()
-            self.update_twitch_connection_status(False)
+            self.update_twitch_display(False)
         except Exception as e:
             QMessageBox.warning(self, "Sign Out Error", f"An error occurred while signing out: {e}")
 
-    def update_twitch_connection_status(self, connected):
+    def update_twitch_display(self, connected):
         status_message = "Connected to Twitch" if connected else "Not Connected to Twitch"
         self.twitch_status_label.setText(status_message)
         self.authenticate_button.setEnabled(not connected)
@@ -1358,3 +1430,9 @@ class MainWindow(QMainWindow):
             # display the rewards in the UI...
         except Exception as e:
             logging.error(f"Failed to get channel point rewards: {e}")    
+            
+            
+    def pause_shuffle_for_duration(self):
+        self.pause_shuffle()
+        QTimer.singleShot(self.pause_duration_spinbox.value() * 1000, self.resume_shuffle)
+        logging.info("Shuffle paused for %d seconds", self.pause_duration_spinbox.value())          

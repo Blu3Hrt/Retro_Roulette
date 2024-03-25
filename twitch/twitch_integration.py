@@ -5,20 +5,32 @@ import webbrowser
 import json
 import os
 import logging
-import threading
+import time
 from dotenv import load_dotenv
 from urllib.parse import urlencode
+from PySide6.QtCore import QObject, Signal
 
 from Python_Client import send_command
+import logging
 
+# TODO: Handle expired refresh tokens
+# TODO: Handle pause shuffle reward
 
-class TwitchIntegration:
-    def __init__(self):
+class TwitchIntegration(QObject):
+    force_swap_signal = Signal()
+    pause_shuffle_signal = Signal()
+    def __init__(self, main_window):
+        super().__init__()
+        logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
         load_dotenv()
         self.client_id = os.environ.get('TWITCH_CLIENT_ID')
         self.client_secret = os.environ.get('TWITCH_CLIENT_SECRET')
         self.redirect_uri = os.environ.get('TWITCH_REDIRECT_URI')
         self.scopes = os.environ.get('TWITCH_SCOPES').split('+')
+        self.main_window = main_window
+        self.main_window.force_swap()
+    
+        
 
     def save_tokens_securely(self, access_token, refresh_token):
         keyring.set_password('TwitchIntegration', 'access_token', access_token)
@@ -95,7 +107,9 @@ class TwitchIntegration:
         response = requests.get('https://api.twitch.tv/helix/users', headers=headers)
         response.raise_for_status()  # raise exception if request failed
         return response.json()['data'][0]['id']
-
+    
+        
+        
     def get_rewards(self):
         broadcaster_id = self.get_broadcaster_id()
         access_token, _ = self.get_tokens_securely()
@@ -105,7 +119,6 @@ class TwitchIntegration:
         }
         response = requests.get(f'https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id={broadcaster_id}', headers=headers)
         response.raise_for_status()  # raise exception if request failed
-        logging.debug(f"Rewards: {response.json()['data']}")
         return response.json()['data']    
     
     def create_rewards(self, pause_shuffle_cost, force_swap_cost, pause_shuffle_cooldown, force_swap_cooldown, pause_shuffle_enabled, force_swap_enabled):
@@ -158,7 +171,6 @@ class TwitchIntegration:
         }
         response = requests.patch(f'https://api.twitch.tv/helix/channel_points/custom_rewards?id={reward_id}', headers=headers, json=data)
         response.raise_for_status()  # raise exception if request failed
-        logging.debug(f"Updated reward: {response.json()['data']}")
         return response.json()['data']
             
 
@@ -176,5 +188,130 @@ class TwitchIntegration:
         }
         response = requests.post('https://api.twitch.tv/helix/channel_points/custom_rewards', headers=headers, json=data)
         response.raise_for_status()  # raise exception if request failed
-        logging.debug(f"Created reward: {response.json()['data']}")
         return response.json()['data']
+    
+    def handle_reward_redemption(self, reward_id):
+        # Get the name of the redeemed reward
+        reward_name = self.get_reward_name(reward_id)
+
+        # Emit a signal to perform an action based on the redeemed reward
+        if reward_name =="Force Swap":
+            self.force_swap_signal.emit()
+        if reward_name == "Pause Shuffle":
+            self.pause_shuffle_signal.emit()
+               
+            
+    def listen_for_rewards(self):
+        # Connect to Twitch's PubSub server
+        ws = websocket.WebSocketApp(
+            'wss://pubsub-edge.twitch.tv',
+            on_message=self.on_message,
+            on_error=self.on_error,
+            on_close=self.on_close,
+            on_open=self.on_open
+        )
+        
+
+        # Get the access token
+        access_token, _ = self.get_tokens_securely()
+
+        # Get the user's channel ID
+        channel_id = self.get_broadcaster_id()
+
+        # Start the websocket connection
+        ws.run_forever()
+        logging.info("WebSocket connection started.")
+
+        # Check if the WebSocket connection is open
+        if ws.sock and ws.sock.connected:
+            logging.info("WebSocket connection is open.")
+            # Subscribe to the channel points topic for the user's channel
+            ws.send(json.dumps({
+                'type': 'LISTEN',
+                'data': {
+                    'topics': [f'channel-points-channel-v1.{channel_id}'],
+                    'auth_token': access_token
+                }
+            }))
+        else:
+            logging.info("WebSocket connection is not open.")
+            time.sleep(5)
+            self.listen_for_rewards()
+
+    def on_message(self, ws, message):        
+        try:
+            message_dict = json.loads(message)
+            if message_dict.get('type') == 'MESSAGE':
+                message_data = json.loads(message_dict.get('data', {}).get('message', '{}'))  # Parse the JSON string into a dictionary
+                if message_data.get('type') == 'reward-redeemed':
+                    if (
+                        reward_id := message_data.get('data', {})
+                        .get('redemption', {})
+                        .get('reward', {})
+                        .get('id')
+                    ):
+                        self.handle_reward_redemption(reward_id)
+                    else:
+                        print('No reward ID found in the message.')
+                else:
+                    print('Message data does not contain a "reward-redeemed" event.')
+            elif message_dict.get('type') == 'reward-redeemed':
+                # Existing code to handle reward redemptions
+                if (
+                    reward_id := message_dict.get('data', {})
+                    .get('redemption', {})
+                    .get('reward', {})
+                    .get('id')
+                ):
+                    self.handle_reward_redemption(reward_id)
+                else:
+                    print('No reward ID found in the message.')
+            else:
+                print('Message type is not "reward-redeemed" or "MESSAGE".')
+        except json.JSONDecodeError:
+            print(f'Failed to parse message: {message}')
+        except Exception as e:
+            print(f'An error occurred while handling the message: {e}')
+
+    def on_error(self, ws, error):
+        print(f'Error: {error}')
+
+    def on_close(self, ws, *args, **kwargs):
+        print(f'Connection closed with args: {args}, kwargs: {kwargs}')
+        # Reconnect after a delay
+        time.sleep(5)
+        self.listen_for_rewards()
+    
+    def get_reward_id(self, reward_name):
+        rewards = self.get_rewards()
+        for reward in rewards:
+            if reward['title'] == reward_name:
+                return reward['id']
+        logging.warning(f"Reward ID not found for {reward_name}")
+        return None
+    
+    def get_reward_name(self, reward_id):
+        rewards = self.get_rewards()
+        for reward in rewards:
+            if reward['id'] == reward_id:
+                return reward['title']
+        logging.warning(f"Reward name not found for {reward_id}")
+        return "Reward Name"
+    
+    def on_open(self, ws):
+        # Get the access token
+        access_token, _ = self.get_tokens_securely()
+        logging.debug(f"Access token: {access_token}")
+
+        # Get the user's channel ID
+        channel_id = self.get_broadcaster_id()
+        logging.debug(f"Channel ID: {channel_id}")
+
+        # Subscribe to the channel points topic for the user's channel
+        ws.send(json.dumps({
+            'type': 'LISTEN',
+            'data': {
+                'topics': [f'channel-points-channel-v1.{channel_id}'],
+                'auth_token': access_token
+            }
+        }))
