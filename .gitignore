@@ -58,3 +58,6 @@ test.py
 .vscode/settings.json
 .vscode/PythonImportHelper-v2-Completion.json
 twitch_encryption.py
+main.spec
+secret.key
+twitch_encrypt.py

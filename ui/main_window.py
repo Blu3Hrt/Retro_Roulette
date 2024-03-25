@@ -9,6 +9,7 @@ from twitch.twitch_flask import flask_thread
 from twitch.twitch_integration import TwitchIntegration
 from ui.style import Style
 from pathlib import Path
+from twitch_encrypt import load_key, decrypt_file
 import Python_Client
 
 import os, random, subprocess, time, json, sys, logging
@@ -28,6 +29,11 @@ class MainWindow(QMainWindow):
         logging.info(f"MainWindow is running in thread ID: {main_thread_id}")                
         self.resize(600, 600)
         self.setWindowTitle("Retro Roulette")
+        # Load the key
+        key = load_key()
+
+        # Decrypt the .env file
+        decrypt_file(".env", key)        
 
         # Create Tab Widget
         self.tab_widget = QTabWidget(self)
