@@ -61,3 +61,6 @@ twitch_encryption.py
 main.spec
 secret.key
 twitch_encrypt.py
+twitch_decrypt.py
+Backups/
+RR AutoPy.json

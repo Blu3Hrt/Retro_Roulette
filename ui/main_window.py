@@ -9,7 +9,7 @@ from twitch.twitch_flask import flask_thread
 from twitch.twitch_integration import TwitchIntegration
 from ui.style import Style
 from pathlib import Path
-from twitch_encrypt import load_key, decrypt_file
+# from twitch_encrypt import load_key, decrypt_file
 import Python_Client
 
 import os, random, subprocess, time, json, sys, logging
@@ -26,21 +26,20 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
         main_thread_id = threading.get_ident()
-        logging.info(f"MainWindow is running in thread ID: {main_thread_id}")                
+        logging.info(f"MainWindow is running in thread ID: {main_thread_id}")
         self.resize(600, 600)
         self.setWindowTitle("Retro Roulette")
-        # Load the key
-        key = load_key()
+        # if key := load_key():
+        #     # Decrypt the .env file
+        #     decrypt_file(".env", key)        
 
-        # Decrypt the .env file
-        decrypt_file(".env", key)        
 
         # Create Tab Widget
         self.tab_widget = QTabWidget(self)
         self.setCentralWidget(self.tab_widget)
 
         self.game_manager = GameManager()
-        self.config_manager = ConfigManager()     
+        self.config_manager = ConfigManager()
         self.session_manager = SessionManager()
         self.stat_tracker = StatsTracker()
         self.is_shuffling = False
@@ -64,11 +63,11 @@ class MainWindow(QMainWindow):
         self.refresh_ui()
         self.init_timer(self.update_stats_display, 1000)
         self.init_timer(self.update_stats_files, 1000)
-        
+
         self.shuffle_timer = QTimer()
         self.shuffle_timer.timeout.connect(self.shuffle_games)
         self.remaining_shuffle_time = None        
-        
+
 
         # Initialize stats_preferences with values from the configuration or use default values
         self.stats_preferences = self.config.get('stats_preferences', {
@@ -612,7 +611,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Configuration Error", f"BizHawk executable not found at {bizhawk_exe}")
             return False
 
-        lua_script = Path("Lua/bizhawk_server.lua")
+        # Get the directory of the currently running script or the temporary folder
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            script_dir = Path(sys._MEIPASS)
+        else:
+            script_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+
+        # Construct the full path to the lua script
+        lua_script = script_dir / "Lua" / "bizhawk_server.lua"
         if not lua_script.is_file():
             QMessageBox.critical(self, "Configuration Error", f"Lua script not found at {lua_script}")
             return False
@@ -1244,6 +1250,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(tab)
 
         if self.twitch_integration.is_authenticated():
+            current_rewards = self.twitch_integration.get_rewards()
             self.twitch_integration.refresh_access_token()
             self.start_listening_for_rewards()
         else:

@@ -6,6 +6,7 @@ import json
 import os
 import logging
 import time
+import sys
 from dotenv import load_dotenv
 from urllib.parse import urlencode
 from PySide6.QtCore import QObject, Signal
@@ -20,14 +21,19 @@ class TwitchIntegration(QObject):
     def __init__(self, main_window):
         super().__init__()
         logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
-        load_dotenv()
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            script_dir = sys._MEIPASS
+        else:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        env_path = os.path.join(script_dir, '.env')
+        load_dotenv(env_path)
         self.client_id = os.environ.get('TWITCH_CLIENT_ID')
-        self.client_secret = os.environ.get('TWITCH_CLIENT_SECRET')
+        self.client_secret = os.getenv('TWITCH_CLIENT_SECRET')
         self.redirect_uri = os.environ.get('TWITCH_REDIRECT_URI')
-        self.scopes = os.environ.get('TWITCH_SCOPES').split('+')
+        self.scopes = os.environ.get('TWITCH_SCOPES', '').split('+')
         self.main_window = main_window
         self.main_window.force_swap()
-    
         
 
     def save_tokens_securely(self, access_token, refresh_token):
@@ -52,7 +58,7 @@ class TwitchIntegration(QObject):
         response_data = response.json()
 
         if response.status_code != 200:
-            logging.error(f"Failed to exchange code for tokens: {response_data}")
+            logging.error("Failed to get access token.")
             return
 
         access_token = response_data.get('access_token')
@@ -341,7 +347,6 @@ class TwitchIntegration(QObject):
     def on_open(self, ws):
         # Get the access token
         access_token, _ = self.get_tokens_securely()
-        logging.debug(f"Access token: {access_token}")
 
         # Get the user's channel ID
         channel_id = self.get_broadcaster_id()
