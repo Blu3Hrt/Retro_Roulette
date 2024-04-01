@@ -752,7 +752,7 @@ class MainWindow(QMainWindow):
             "Hotkey Settings",
             lambda layout: layout.setRowWrapPolicy(QFormLayout.DontWrapRows),
             [
-                ("Global Hotkey:", self.hotkey_input),
+                ("Game Completion Toggle Global Hotkey:", self.hotkey_input),
             ]
         )
 

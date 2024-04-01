@@ -60,3 +60,14 @@ test.py
 twitch_encryption.py
 main.spec
 RR AutoPy.json
+dist/bizhawk_server.lua
+dist/Lua/ltn12.lua
+dist/Lua/mime.lua
+dist/Lua/socket.lua
+dist/Lua/socket/ftp.lua
+dist/Lua/socket/headers.lua
+dist/Lua/socket/http.lua
+dist/Lua/socket/smtp.lua
+dist/Lua/socket/tp.lua
+dist/Lua/socket/url.lua
+Logo.ico
