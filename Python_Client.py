@@ -2,7 +2,6 @@ import socket, os
 import logging
 
 sock = None
-logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
 
 def send_command(command):
     

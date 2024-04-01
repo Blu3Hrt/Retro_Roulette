@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QMainWindow, QTabWidget, QWidget, QVBoxLayout, QMessageBox, QInputDialog, QLabel, QLineEdit, QGroupBox,
                                QPushButton, QListWidget, QFileDialog, QMenu, QComboBox, QHBoxLayout, QFormLayout, QCheckBox, QSpinBox)
-from PySide6.QtCore import Qt, QTimer, QThread
+from PySide6.QtCore import Qt, QTimer
 from game_manager import GameManager
 from config import ConfigManager
 from session_manager import SessionManager
@@ -16,63 +16,85 @@ import psutil, shutil, keyboard, threading
 
 SUPPORTED_EXTENSIONS = (
     '.nes', '.snes', '.gbc', '.gba', '.md', '.nds',
-    '.pce', '.sgx', '.sms', '.gg', '.sg', '.a26',  # Add more extensions as needed
-)
+    '.pce', '.sgx', '.sms', '.gg', '.sg', '.a26',
+    '.sfc', '.n64', '.psx', '.ps2', '.psp', '.gb', 
+    '.gc', '.3ds', '.smc', '.3ds', '.nsp', '.xci',
+    '.zip', '.7z', '.rar', '.tar', '.gz', '.bz2',
+    '.cue', '.z64', '.gen', '.smd', '.v64', '.gcm',
+    '.gcz', '.srl', '.xiso', '.dsi', '.app', '.ids',
+    '.pce', '.ngp', '.ngc', '.vpk', '.vb', '.ws',
+    '.wsc', '.bin', '.dat', '.lst', '.ipa', '.apk',
+    '.obb')
 
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
-        super().__init__(parent)
-        logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
-        main_thread_id = threading.get_ident()
-        logging.info(f"MainWindow is running in thread ID: {main_thread_id}")                
-        self.resize(600, 600)
-        self.setWindowTitle("Retro Roulette")
+        try:
+            super().__init__(parent)
+            main_thread_id = threading.get_ident()
+            logging.info(f"MainWindow is running in thread ID: {main_thread_id}")                
+            self.resize(750, 500)
+            self.setWindowTitle("Retro Roulette")
 
-        # Create Tab Widget
-        self.tab_widget = QTabWidget(self)
-        self.setCentralWidget(self.tab_widget)
+            # Create Tab Widget
+            self.tab_widget = QTabWidget(self)
+            self.setCentralWidget(self.tab_widget)
 
-        self.game_manager = GameManager()
-        self.config_manager = ConfigManager()     
-        self.session_manager = SessionManager()
-        self.stat_tracker = StatsTracker()
-        self.is_shuffling = False
-        self.twitch_integration = TwitchIntegration(self)
-        self.style_setter = Style()
+            self.game_manager = GameManager()
+            self.config_manager = ConfigManager()     
+            self.session_manager = SessionManager()
+            self.stat_tracker = StatsTracker()
+            self.is_shuffling = False
+            self.twitch_integration = TwitchIntegration(self)
+            self.style_setter = Style()
 
-        # Load configuration
-        self.config = self.config_manager.load_config()
+            # Load configuration
+            self.config = self.config_manager.load_config()
 
-        # Initialize UI tabs
-        self.init_ui()
-        self.init_tabs()
+            # Initialize UI tabs
+            self.init_ui()
+            self.init_tabs()
 
-        # Initialize session name with None
-        self.current_session_name = None
+            # Initialize session name with None
+            self.current_session_name = None
 
-        # Load last session if it exists
-        self.load_last_session()
+            # Load last session if it exists
+            self.load_last_session()
 
-        # Set up UI refresh and stats timer
-        self.refresh_ui()
-        self.init_timer(self.update_stats_display, 1000)
-        self.init_timer(self.update_stats_files, 1000)
-        
-        self.shuffle_timer = QTimer()
-        self.shuffle_timer.timeout.connect(self.shuffle_games)
-        self.remaining_shuffle_time = None        
-        
+            # Set up UI refresh and stats timer
+            self.refresh_ui()
+            self.init_timer(self.update_stats_display, 1000)
+            self.init_timer(self.update_stats_files, 1000)
+            
+            self.shuffle_timer = QTimer()
+            self.shuffle_timer.timeout.connect(self.shuffle_games)
+            self.remaining_shuffle_time = None        
+            
 
-        # Initialize stats_preferences with values from the configuration or use default values
-        self.stats_preferences = self.config.get('stats_preferences', {
-            'individual_game_stats': False,
-            'total_stats': True,
-            'current_game_stats': True
-        })
+            # Initialize stats_preferences with values from the configuration or use default values
+            self.stats_preferences = self.config.get('stats_preferences', {
+                'individual_game_stats': False,
+                'total_stats': True,
+                'current_game_stats': True
+            })
 
-        self.twitch_integration.force_swap_signal.connect(self.force_swap)
-        self.twitch_integration.pause_shuffle_signal.connect(self.pause_shuffle_for_duration)
+            self.twitch_integration.force_swap_signal.connect(self.force_swap)
+            self.twitch_integration.pause_shuffle_signal.connect(self.pause_shuffle_for_duration)
+
+            configured_hotkey = self.config_manager.load_hotkey_config()
+            self.register_global_hotkey(configured_hotkey)
+        except Exception as e:
+            logging.error(f"An error occurred in MainWindow initialization: {str(e)}")
+            raise
+
+        # Load and apply UI style from the configuration
+        ui_style = self.config.get('style', 'dark')
+        self.style_selector.setCurrentText(ui_style.capitalize())
+        self.apply_selected_style()  # Ensures the style is applied on launch
+
+        # Load and set the Twitch pause duration from the configuration
+        twitch_pause_duration = self.config.get('twitch_pause_duration', 30)  # Default to 30 seconds
+        self.pause_duration_spinbox.setValue(twitch_pause_duration)
 
         
 
@@ -92,7 +114,6 @@ class MainWindow(QMainWindow):
         style_method(self)
         # Save the selected style to the configuration
         self.config['style'] = selected_style
-        self.config_manager.save_config(self.config)
 
     def init_timer(self, callback, interval):
         timer = QTimer(self)
@@ -106,7 +127,7 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.create_shuffle_management_tab(), "Shuffle Management")
         self.tab_widget.addTab(self.create_configuration_tab(), "Configuration")
         self.tab_widget.addTab(self.create_stats_tab(), "Stats")
-        self.tab_widget.addTab(self.create_twitch_integration_tab(), "Twitch")
+        self.tab_widget.addTab(self.create_twitch_integration_tab(), "Twitch [Experimental]")
 
 
     def refresh_ui(self):
@@ -162,50 +183,48 @@ class MainWindow(QMainWindow):
         games_info_layout.addWidget(self.game_details_label)
         layout.addWidget(games_info_group_box)
 
+        self.game_list.doubleClicked.connect(self.prompt_rename_game)
+
         layout.addStretch()
         return tab
 
 
-    def setup_hotkey_listener(self):
-        hotkey = self.config.get('toggle_complete_hotkey', 'ctrl+t')
-        keyboard.add_hotkey(hotkey, self.toggle_current_game_complete)
-
-    def toggle_current_game_complete(self):
-        # Logic to toggle the 'completed' status of the current game
-        if self.current_game_path:
-            if self.game_manager.games[self.current_game_path].get('completed'):
-                self.game_manager.mark_game_as_not_completed(self.current_game_path)
-            else:
-                self.game_manager.mark_game_as_completed(self.current_game_path)
-            self.refresh_game_list()  # Update the UI
-
     def show_game_context_menu(self, pos):
-        menu = QMenu(self)
-        selected_items = self.game_list.selectedItems()
-        actions = {}
+        try:
+            menu = QMenu(self)
+            selected_items = self.game_list.selectedItems()
+            actions = {}
 
-        if not selected_items:
-            actions[menu.addAction("Add Games")] = self.add_games
-            actions[menu.addAction("Add Games from Directory")] = self.add_games_from_directory
-        else:
-            self.game_context_menu_logic(actions, menu, selected_items)
-        action = menu.exec_(self.game_list.mapToGlobal(pos))
-        if action in actions:
-            actions[action]()
+            if not selected_items:
+                actions[menu.addAction("Add Games")] = self.add_games
+                actions[menu.addAction("Add Games from Directory")] = self.add_games_from_directory
+            else:
+                self.game_context_menu_logic(actions, menu, selected_items)
+            action = menu.exec_(self.game_list.mapToGlobal(pos))
+            if action in actions:
+                actions[action]()
+                logging.info(f"Action '{action.text()}' executed")
+        except Exception as e:
+            # Handle the exception here
+            logging.error(f"An error occurred in show_game_context_menu: {e}")
 
     def game_context_menu_logic(self, actions, menu, selected_items):
-        actions[menu.addAction("Remove Selected Game")] = self.remove_selected_game
-        game_name = selected_items[0].text().split(" - ")[0]
-        game_path = self.find_game_path_by_name(game_name)
-        if game_path and self.game_manager.games[game_path].get('completed'):
-            actions[menu.addAction("Unmark as Completed")] = self.unmark_game_as_not_completed
-        else:
-            actions[menu.addAction("Mark as Completed")] = self.mark_game_as_completed
-        actions[menu.addAction("Rename Selected Game")] = self.prompt_rename_game
-        actions[menu.addAction("Set Goals for Selected Game")] = self.prompt_set_game_goals
+        try:
+            actions[menu.addAction("Remove Selected Game")] = self.remove_selected_game
+            # Use the cleaned game name from the selected item
+            game_name = self.clean_game_name(selected_items[0].text())
+            game_path = self.find_game_path_by_name(game_name)
+            if game_path and self.game_manager.games[game_path].get('completed'):
+                actions[menu.addAction("Unmark as Completed")] = self.mark_game_as_not_completed
+            else:
+                actions[menu.addAction("Mark as Completed")] = self.mark_game_as_completed
+            actions[menu.addAction("Rename Selected Game")] = self.prompt_rename_game
+            actions[menu.addAction("Set Goals for Selected Game")] = self.prompt_set_game_goals
+        except Exception as e:
+            # Handle the exception here
+            logging.error(f"Error occurred in game_context_menu_logic: {e}")
 
-    def handle_double_click(self, item):
-        self.prompt_rename_game()
+
     
     def prompt_set_game_goals(self):
         selected_items = self.game_list.selectedItems()
@@ -213,14 +232,21 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Information", "No game selected for setting goals")
             return
 
-        game_name = selected_items[0].text().split(" - ")[0]
+        game_name = selected_items[0].text().rsplit(" - ", 1)[0]  # Modified line
         if game_path := self.find_game_path_by_name(game_name):
             current_goals = self.game_manager.games[game_path].get('goals', '')
             new_goals, ok = QInputDialog.getMultiLineText(self, "Set Goals", "Enter goals for the game:", current_goals)
 
             if ok:
-                self.game_manager.set_game_goals(game_path, new_goals)
-                self.refresh_game_list()    
+                try:
+                    self.game_manager.set_game_goals(game_path, new_goals)
+                    self.refresh_game_list()
+                    # Debug logging
+                    print(f"Game goals set for {game_name}: {new_goals}")
+                except Exception as e:
+                    # Error handling/logging
+                    print(f"Error setting game goals for {game_name}: {e}")
+                    QMessageBox.critical(self, "Error", f"Failed to set goals for {game_name}. Please try again.")
     
     def filter_games(self):
         search_text = self.search_input.text().lower()  # Corrected from self.search_bar to self.search_input
@@ -228,22 +254,19 @@ class MainWindow(QMainWindow):
             item = self.game_list.item(i)
             item.setHidden(search_text not in item.text().lower())
             
-    def set_selected_game_goals(self):
-        if selected_items := self.game_list.selectedItems():
-            game_name = selected_items[0].text().split(" - ")[0]
-            if game_path := self.find_game_path_by_name(game_name):
-                goals = self.goal_input.text()
-                self.game_manager.set_game_goals(game_path, goals)
-                self.goal_input.clear()
-                self.refresh_game_list()            
 
     def display_game_details(self):
-        if selected_items := self.game_list.selectedItems():
-            game_name = selected_items[0].text().split(" - ")[0]
-            if game_path := self.find_game_path_by_name(game_name):
-                self.display_game_stats(game_path, game_name)
-        else:
-            self.game_details_label.setText("Select a game to view details")
+        try:
+            if selected_items := self.game_list.selectedItems():
+                game_name = selected_items[0].text().rsplit(" - ", 1)[0]
+                if game_path := self.find_game_path_by_name(game_name):
+                    self.display_game_stats(game_path, game_name)
+            else:
+                self.game_details_label.setText("Select a game to view details")
+        except Exception as e:
+            # Handle the exception here
+            logging.error(f"Error occurred while displaying game details: {str(e)}")
+            self.game_details_label.setText("Error occurred while displaying game details")
 
     def display_game_stats(self, game_path, game_name):
         game_data = self.game_manager.games[game_path]
@@ -326,20 +349,37 @@ class MainWindow(QMainWindow):
             return
 
         for item in selected_items:
+            logging.info(f"Processing item: {item.text()}")
             if game_path := self.find_game_path_by_name(item.text()):
+                logging.info(f"Found game path: {game_path}")
                 action(game_path)
+                logging.info(f"Action performed on: {game_path}")
 
         self.refresh_ui()
+        logging.info("UI refreshed")
         self.update_and_save_session()
+        logging.info("Session updated and saved")
 
     def remove_selected_game(self):
-        self.process_selected_games(self.game_manager.remove_game, "No game selected to remove")
+        try:
+            self.process_selected_games(self.game_manager.remove_game, "No game selected to remove")
+            logging.info("Selected game(s) removed")
+        except Exception as e:
+            logging.error(f"Error occurred while removing game: {str(e)}")
 
     def mark_game_as_completed(self):
-        self.process_selected_games(self.game_manager.mark_game_as_completed, "No game selected to mark as completed")
+        try:
+            self.process_selected_games(self.game_manager.mark_game_as_completed, "No game selected to mark as completed")
+            logging.info("Selected game(s) marked as completed")
+        except Exception as e:
+            logging.error(f"Error occurred while marking game as completed: {str(e)}")
 
-    def unmark_game_as_not_completed(self):
-        self.process_selected_games(self.game_manager.mark_game_as_not_completed, "No game selected to unmark as completed")
+    def mark_game_as_not_completed(self):
+        try:
+            self.process_selected_games(self.game_manager.mark_game_as_not_completed, "No game selected to unmark as completed")
+            logging.info("Selected game(s) marked as not completed")
+        except Exception as e:
+            logging.error(f"Error occurred while marking game as not completed: {str(e)}")
          
     def prompt_rename_game(self):
         selected_items = self.game_list.selectedItems()
@@ -351,26 +391,43 @@ class MainWindow(QMainWindow):
         new_name, ok = QInputDialog.getText(self, "Rename Game", "Enter new name:", text=current_name)
 
         if ok and new_name:
-            self.rename_selected_game(selected_items[0], new_name)            
+            try:
+                self.rename_selected_game(selected_items[0], new_name)
+                logging.info("Game renamed successfully")
+            except Exception as e:
+                logging.error(f"Error occurred while renaming game: {e}")
+                QMessageBox.critical(self, "Error", "An error occurred while renaming the game. Please try again.")         
 
     def rename_selected_game(self, item, new_name):
         old_name = self.clean_game_name(item.text())
         if path := self.find_game_path_by_name(old_name):
             self.game_manager.rename_game(path, new_name)
             self.refresh_game_list()
+            logging.info(f"Game '{old_name}' renamed to '{new_name}'")
+        else:
+            logging.warning(f"Game '{old_name}' not found for renaming")
 
     def find_game_path_by_name(self, name):
-        return next(
-            (
-                path
-                for path, data in self.game_manager.games.items()
-                if data['name'] == name
-            ),
-            None,
-        )
+        try:
+            cleaned_name = self.clean_game_name(name)
+            return next(
+                (
+                    game_path
+                    for game_path, game_data in self.game_manager.games.items()
+                    if game_data['name'] == cleaned_name
+                ),
+                None,
+            )
+        except Exception as e:
+            logging.error(f"Error occurred while finding game path by name: {e}")
+            return None
 
     def clean_game_name(self, name):
-        return name.split(" - ")[0]
+        if " - In Progress" in name:
+            return name.rsplit(" - In Progress", 1)[0]
+        elif " - Completed" in name:
+            return name.rsplit(" - Completed", 1)[0]
+        return name
         
             
     def refresh_game_list(self):
@@ -380,7 +437,23 @@ class MainWindow(QMainWindow):
                 item_text = f"{game['name']} - {'Completed' if game['completed'] else 'In Progress'}"
                 self.game_list.addItem(item_text)
 
+    def toggle_game_completion(self):
+        """Toggles the completion status of the current game."""
+        if not self.game_manager.current_game:
+            return  # No game is currently selected
 
+        current_game_path = self.find_game_path_by_name(self.game_manager.current_game)
+        if not current_game_path:
+            return  # Current game path not found
+
+        # Toggle the completion status
+        if self.game_manager.games[current_game_path]['completed']:
+            self.game_manager.mark_game_as_not_completed(current_game_path)
+        else:
+            self.game_manager.mark_game_as_completed(current_game_path)
+
+        # Refresh the UI to reflect changes
+        self.refresh_game_list()
 
 
     def create_button(self, text, slot):
@@ -600,24 +673,7 @@ class MainWindow(QMainWindow):
         else:
             self.save_game_state(game_path)
 
-    def execute_bizhawk_script(self):
-        bizhawk_exe = Path(self.config["bizhawk_path"])
-        if not bizhawk_exe.is_file():
-            QMessageBox.critical(self, "Configuration Error", f"BizHawk executable not found at {bizhawk_exe}")
-            return False
 
-        lua_script = Path("Lua/bizhawk_server.lua")
-        if not lua_script.is_file():
-            QMessageBox.critical(self, "Configuration Error", f"Lua script not found at {lua_script}")
-            return False
-
-        command = [str(bizhawk_exe), f"--lua={lua_script}"]
-        try:
-            subprocess.Popen(command)
-            return True
-        except Exception as e:
-            QMessageBox.critical(self, "Execution Error", f"An error occurred while launching BizHawk: {e}")
-            return False
 
     def get_state_path(self, game_file):
         session_dir = Path(self.get_session_path(self.current_session_name))
@@ -689,18 +745,17 @@ class MainWindow(QMainWindow):
             ]
         )
 
-        self.toggle_complete_hotkey_input = QLineEdit(self.config.get('toggle_complete_hotkey', 'Ctrl+T'))
-        self.toggle_complete_hotkey_input.setPlaceholderText("Enter hotkey (e.g., Ctrl+T)")
-        save_hotkey_button = QPushButton("Save Hotkey")
-        save_hotkey_button.clicked.connect(self.save_hotkey_configuration)
+        self.hotkey_input = QLineEdit(self.config_manager.load_hotkey_config())
+        self.hotkey_input.editingFinished.connect(self.update_hotkey_config)
+        
         hotkey_group_box = setup_group_box(
-            "Hotkeys",
-            no_op,
+            "Hotkey Settings",
+            lambda layout: layout.setRowWrapPolicy(QFormLayout.DontWrapRows),
             [
-                ("Toggle Complete Hotkey:", self.toggle_complete_hotkey_input),
-                save_hotkey_button,
+                ("Global Hotkey:", self.hotkey_input),
             ]
         )
+
 
         save_config_button = QPushButton("Save Configuration")
         save_config_button.clicked.connect(self.save_configuration)
@@ -709,7 +764,8 @@ class MainWindow(QMainWindow):
         load_default_config_button.clicked.connect(self.load_default_config)
                 
 
-        [main_layout.addWidget(group_box) for group_box in [style_group_box, bizhawk_group_box, shuffle_interval_group_box, hotkey_group_box]]
+        [main_layout.addWidget(group_box) for group_box in [style_group_box, bizhawk_group_box, shuffle_interval_group_box]]
+        main_layout.addWidget(hotkey_group_box)
         main_layout.addWidget(save_config_button)
         main_layout.addWidget(load_default_config_button)
         main_layout.addStretch()
@@ -727,17 +783,48 @@ class MainWindow(QMainWindow):
             self, "Select BizHawk Executable", "", "Executable Files (*.exe)"
         )[0]:
             self.bizhawk_path_input.setText(path)
+            
+    def execute_bizhawk_script(self):
+        bizhawk_exe = Path(self.config["bizhawk_path"])
+        if not bizhawk_exe.is_file():
+            QMessageBox.critical(self, "Configuration Error", f"BizHawk executable not found at {bizhawk_exe}")
+            return False
 
-    def save_hotkey_configuration(self):
-        hotkey = self.toggle_complete_hotkey_input.text()
-        self.config['toggle_complete_hotkey'] = hotkey
-        self.config_manager.save_config(self.config)
-        self.setup_hotkey_listener()
+        lua_script = Path("bizhawk_server.lua")
+        if not lua_script.is_file():
+            QMessageBox.critical(self, "Configuration Error", f"Lua script not found at {lua_script}")
+            return False
+
+        command = [str(bizhawk_exe), f"--lua={lua_script}"]
+        try:
+            subprocess.Popen(command)
+            return True
+        except Exception as e:
+            QMessageBox.critical(self, "Execution Error", f"An error occurred while launching BizHawk: {e}")
+            return False            
+
+    def register_global_hotkey(self, hotkey):
+        """Registers a global hotkey to toggle game completion."""
+        def hotkey_action():
+            self.toggle_game_completion()
+
+        keyboard.add_hotkey(hotkey, hotkey_action)
+
+    def update_hotkey_config(self):
+        new_hotkey = self.hotkey_input.text()
+        print(f"Updating hotkey to {new_hotkey}")  # Debugging statement
+        self.config_manager.save_hotkey_config(new_hotkey)
+        # Unregister the previous hotkey and register the new one
+        keyboard.unhook_all_hotkeys()  # Assuming this function is available in the 'keyboard' library
+        self.register_global_hotkey(new_hotkey)
+        print(f"Hotkey {new_hotkey} saved to config")  # Corrected debugging statement
 
     def save_configuration(self):
+        # Gather all configuration fields
         bizhawk_path = self.bizhawk_path_input.text()
         min_interval = self.min_interval_input.text()
         max_interval = self.max_interval_input.text()
+        global_hotkey = self.hotkey_input.text()
 
         try:
             min_interval = int(min_interval)
@@ -753,11 +840,16 @@ class MainWindow(QMainWindow):
         config_data = {
             'bizhawk_path': bizhawk_path,
             'min_shuffle_interval': min_interval,
-            'max_shuffle_interval': max_interval
+            'max_shuffle_interval': max_interval,
+            'stats_preferences': self.stats_preferences,
+            'global_hotkey': global_hotkey,
+            'style': self.style_selector.currentText().lower(),
+            'twitch_pause_duration': self.pause_duration_spinbox.value()
         }
 
         self.config_manager.save_config(config_data)
         QMessageBox.information(self, "Success", "Configuration saved successfully.")
+
 
     def load_configuration(self):
         self.config = self.config_manager.load_config()
@@ -789,12 +881,20 @@ class MainWindow(QMainWindow):
         self.output_individual_game_stats_checkbox = QCheckBox("Output Individual Game Stats")
         self.output_total_stats_checkbox = QCheckBox("Output Total Stats")
         self.output_current_game_stats_checkbox = QCheckBox("Output Current Game Stats")
-        self.output_individual_game_stats_checkbox.setChecked(False)
-        self.output_total_stats_checkbox.setChecked(True)
-        self.output_current_game_stats_checkbox.setChecked(True)
+
+        # Set the initial state of the checkboxes based on the configuration
+        stats_preferences = self.config.get('stats_preferences', {
+            'individual_game_stats': False,
+            'total_stats': True,
+            'current_game_stats': True
+        })
+        self.output_individual_game_stats_checkbox.setChecked(stats_preferences['individual_game_stats'])
+        self.output_total_stats_checkbox.setChecked(stats_preferences['total_stats'])
+        self.output_current_game_stats_checkbox.setChecked(stats_preferences['current_game_stats'])
         self.output_individual_game_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
         self.output_total_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
         self.output_current_game_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
+        
 
         layout.addWidget(self.total_swaps_label)
         layout.addWidget(self.total_time_label)
@@ -1214,7 +1314,7 @@ class MainWindow(QMainWindow):
         os.makedirs(save_states_path, exist_ok=True)
 
         # Assuming you have a method to get the current session data
-        current_session_data = self.get_current_session_data()
+        current_session_data = self.session_manager.get_session_info(self.current_session_name)
 
         # Adjust the 'name' in the session data
         current_session_data['name'] = new_session_name
@@ -1287,7 +1387,7 @@ class MainWindow(QMainWindow):
        
         self.pause_duration_spinbox = QSpinBox()
         self.pause_duration_spinbox.setRange(1, 3600)
-        self.pause_duration_spinbox.setValue(30)            
+        self.pause_duration_spinbox.setValue(30)           
         
         pause_shuffle_group = QGroupBox("Pause Shuffle Reward Settings")
         pause_shuffle_layout = QVBoxLayout()
@@ -1440,16 +1540,12 @@ class MainWindow(QMainWindow):
     def on_auth_failed(self, error_message):
         logging.info("on_auth_failed slot called with error: %s", error_message)
         QMessageBox.warning(self, "Authentication Failed", error_message)
-
-
-    def get_channel_rewards(self):
-        try:
-            rewards = self.twitch_integration.get_channel_point_rewards()
-        except Exception as e:
-            logging.error(f"Failed to get channel point rewards: {e}")    
-            
+      
             
     def pause_shuffle_for_duration(self):
-        self.pause_shuffle()
-        QTimer.singleShot(self.pause_duration_spinbox.value() * 1000, self.resume_shuffle)
-        logging.info("Shuffle paused for %d seconds", self.pause_duration_spinbox.value())          
+        if self.is_shuffling:
+            self.pause_shuffle()
+            QTimer.singleShot(self.pause_duration_spinbox.value() * 1000, self.resume_shuffle)
+            logging.info("Shuffle paused for %d seconds", self.pause_duration_spinbox.value())
+        else:
+            logging.error("Cannot pause shuffle. Shuffling is not active.")   

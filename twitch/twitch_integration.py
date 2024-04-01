@@ -10,23 +10,17 @@ from dotenv import load_dotenv
 from urllib.parse import urlencode
 from PySide6.QtCore import QObject, Signal
 
-from Python_Client import send_command
-import logging
-
 
 class TwitchIntegration(QObject):
     force_swap_signal = Signal()
     pause_shuffle_signal = Signal()
     def __init__(self, main_window):
         super().__init__()
-        logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
         load_dotenv()
         self.client_id = os.environ.get('TWITCH_CLIENT_ID')
         self.client_secret = os.environ.get('TWITCH_CLIENT_SECRET')
         self.redirect_uri = os.environ.get('TWITCH_REDIRECT_URI')
         self.scopes = os.environ.get('TWITCH_SCOPES').split('+')
-        self.main_window = main_window
-        self.main_window.force_swap()
     
         
 
