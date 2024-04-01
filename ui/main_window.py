@@ -966,6 +966,8 @@ class MainWindow(QMainWindow):
         
         if self.stats_preferences.get('current_game_stats'):
             stats_tracker.write_current_game_stats_to_files(session_folder, self.current_game_name)
+            
+        # TODO: Add output files for goals of current game.
 
 
 
