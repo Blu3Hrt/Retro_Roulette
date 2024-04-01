@@ -14,7 +14,6 @@ class FlaskThread(QThread):
     def __init__(self):
         super().__init__()
         self.server = None
-        logging.basicConfig(filename='Main.log', encoding='utf-8', level=logging.DEBUG)
 
     def run(self):
         flask_thread_id = threading.get_ident()
