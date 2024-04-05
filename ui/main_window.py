@@ -64,19 +64,13 @@ class MainWindow(QMainWindow):
             # Set up UI refresh and stats timer
             self.refresh_ui()
             self.init_timer(self.update_stats_display, 1000)
-            self.init_timer(self.update_stats_files, 1000)
             
             self.shuffle_timer = QTimer()
             self.shuffle_timer.timeout.connect(self.shuffle_games)
             self.remaining_shuffle_time = None        
             
 
-            # Initialize stats_preferences with values from the configuration or use default values
-            self.stats_preferences = self.config.get('stats_preferences', {
-                'individual_game_stats': False,
-                'total_stats': True,
-                'current_game_stats': True
-            })
+
 
             self.twitch_integration.force_swap_signal.connect(self.force_swap)
             self.twitch_integration.pause_shuffle_signal.connect(self.pause_shuffle_for_duration)
@@ -486,7 +480,12 @@ class MainWindow(QMainWindow):
         return tab
 
 
-    def launch_bizhawk(self):
+    def launch_bizhawk(self):        
+        self.config = self.config_manager.load_config()
+        bizhawk_path = self.config.get('bizhawk_path')
+        if not bizhawk_path:
+            QMessageBox.critical(self, "Configuration Error", "BizHawk path is not set.")
+            return        
         if self.is_bizhawk_process_running():
             QMessageBox.information(self, "BizHawk Running", "BizHawk is already running.")
             # Optional: Bring BizHawk window to the front if possible
@@ -841,7 +840,6 @@ class MainWindow(QMainWindow):
             'bizhawk_path': bizhawk_path,
             'min_shuffle_interval': min_interval,
             'max_shuffle_interval': max_interval,
-            'stats_preferences': self.stats_preferences,
             'global_hotkey': global_hotkey,
             'style': self.style_selector.currentText().lower(),
             'twitch_pause_duration': self.pause_duration_spinbox.value()
@@ -882,18 +880,6 @@ class MainWindow(QMainWindow):
         self.output_total_stats_checkbox = QCheckBox("Output Total Stats")
         self.output_current_game_stats_checkbox = QCheckBox("Output Current Game Stats")
 
-        # Set the initial state of the checkboxes based on the configuration
-        stats_preferences = self.config.get('stats_preferences', {
-            'individual_game_stats': False,
-            'total_stats': True,
-            'current_game_stats': True
-        })
-        self.output_individual_game_stats_checkbox.setChecked(stats_preferences['individual_game_stats'])
-        self.output_total_stats_checkbox.setChecked(stats_preferences['total_stats'])
-        self.output_current_game_stats_checkbox.setChecked(stats_preferences['current_game_stats'])
-        self.output_individual_game_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
-        self.output_total_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
-        self.output_current_game_stats_checkbox.stateChanged.connect(self.update_stats_preferences)
         
 
         layout.addWidget(self.total_swaps_label)
@@ -901,26 +887,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.game_name_label)
         layout.addWidget(self.current_game_swaps_label)
         layout.addWidget(self.current_game_time_label)
-        
-        layout.addWidget(self.output_individual_game_stats_checkbox)
-        layout.addWidget(self.output_total_stats_checkbox)
-        layout.addWidget(self.output_current_game_stats_checkbox)
 
         return tab
 
         
 
-    def update_stats_preferences(self):
-        # Update the stats_preferences attribute based on the state of the checkboxes
-        self.stats_preferences['individual_game_stats'] = self.output_individual_game_stats_checkbox.isChecked()
-        self.stats_preferences['total_stats'] = self.output_total_stats_checkbox.isChecked()
-        self.stats_preferences['current_game_stats'] = self.output_current_game_stats_checkbox.isChecked()
-    
-        # Update the main config dictionary
-        self.config['stats_preferences'] = self.stats_preferences
-    
-        # Save the updated configuration
-        self.config_manager.save_config(self.config)
+
 
     def update_stats_display(self):
         if hasattr(self, 'total_swaps_label'):
@@ -949,25 +921,7 @@ class MainWindow(QMainWindow):
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-    def update_stats_files(self):
-        # Make sure there is a session to update
-        if not self.current_session_name:
-            return
-        self.current_game_name = self.game_manager.current_game
-        session_folder = self.get_session_path(self.current_session_name)
-        stats_tracker = self.game_manager.stats_tracker
-        
-        # Check preferences and write the appropriate stats files
-        if self.stats_preferences.get('individual_game_stats'):
-            stats_tracker.write_individual_game_stats_to_files(session_folder)
-        
-        if self.stats_preferences.get('total_stats'):
-            stats_tracker.write_total_stats_to_files(session_folder)
-        
-        if self.stats_preferences.get('current_game_stats'):
-            stats_tracker.write_current_game_stats_to_files(session_folder, self.current_game_name)
-            
-        # TODO: Add output files for goals of current game.
+
 
 
 

@@ -47,7 +47,7 @@ class GameManager:
             self.games[normalized_path] = {
                 'name': name or os.path.basename(path),
                 'completed': False,
-                'goals': goals or ""
+                'goals': goals or "Beat the Game"
             }
             self.save_games()
         except Exception as e:

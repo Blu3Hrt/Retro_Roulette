@@ -6,7 +6,7 @@ class SessionManager:
         os.makedirs(directory, exist_ok=True)
 
 # Update the save_session method in the SessionManager class to include the 'file_path' argument
-    def save_session(self, name, games, stats, save_states, file_path=None):
+    def save_session(self, name, games, stats, save_states, goals, file_path=None):
         """Save a session to disk within a dedicated folder for the session."""
         # Create the session folder if it doesn't exist
         session_folder = os.path.join(self.directory, name)
@@ -22,6 +22,7 @@ class SessionManager:
             'games': games,
             'stats': stats,
             'save_states': save_states,
+            'goals': goals
         }
         with open(file_path, 'w') as file:
             json.dump(session_data, file, indent=4)
