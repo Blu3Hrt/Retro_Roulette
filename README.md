@@ -31,6 +31,10 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 - **View Session Details:** Easily view details of the currently selected session, including the number of games, completed games, swaps, and session time.
 - **Switch Between Sessions:** Use the dropdown menu to switch between different sessions.
 
+
+![image](https://github.com/Blu3Hrt/Retro_Roulette/assets/59424715/50e319aa-c12a-47e4-a17c-b4a0e796016a)
+
+
 ## Features
 ### Game Management
 - **Add Games:** Easily add games to your list.
