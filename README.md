@@ -63,6 +63,15 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 ### Twitch Integration
 1. **Twitch Connection:** Sign in to Twitch and manage channel point rewards for pausing shuffles and forcing game swaps, enhancing viewer interaction.
 
+## Using with OBS
+
+For streamers, here are some tips for integrating Retro Roulette with OBS:
+
+- **Full Screen Mode:** Play in full screen to maintain a consistent capture size, which is especially helpful if you're not familiar with advanced OBS settings.
+- **Window Capture:** If you do use windowed mode, set up a window capture source for consistent streaming quality across different games.
+- **Disable Messages:** In Retro Roulette, go to `View` and uncheck `Display Messages` to prevent save/load messages from appearing during your stream.
+
+
 
 ## BizHawk Compatibility
 Retro Roulette has been tested with [BizHawk version 2.9.1](https://tasvideos.org/BizHawk/ReleaseHistory#Bizhawk291). Ensure you have this version installed for optimal performance and compatibility.
