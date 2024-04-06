@@ -67,5 +67,23 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 ## BizHawk Compatibility
 Retro Roulette has been tested with [BizHawk version 2.9.1](https://tasvideos.org/BizHawk/ReleaseHistory#Bizhawk291). Ensure you have this version installed for optimal performance and compatibility.
 
+## System Requirements
+
+- **Operating System:** Windows (Tested on Windows 11)
+
+
 ## Acknowledgements
 Special thanks to the creator of *BizHawk Shuffler 2* for inspiration. Check out the original project by authorblues [here](https://github.com/authorblues/bizhawk-shuffler-2).
+
+
+## Development Status
+
+This project is in its early stages, and as a novice programmer, I am continually learning and improving the codebase. The current focus is on functionality, with plans to refactor for cleaner and more efficient code over time. Contributions and suggestions for improvement are welcome!
+
+## Contact Information
+
+Feel free to reach out to me with questions, feedback, or suggestions for Retro Roulette.
+
+- **Twitter:** [@Blu3Hrt](https://twitter.com/Blu3Hrt)
+- **Email:** [emails@blu3hrt.xyz](mailto:emails@blu3hrt.xyz)
+- **Twitch:** [blu3hrt's Channel](https://twitch.tv/blu3hrt)
