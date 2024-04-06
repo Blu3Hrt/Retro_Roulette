@@ -23,12 +23,12 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 
 ### Configuration
 - **Themes:** Choose between Dark and Light modes.
-- **Path Setting:** Add the path for BizHawk (EmuHawk.exe).
+- **Path Setting:** Add the path for BizHawk (Be sure to save configuration before launching BizHawk.).
 - **Game Swap Timing:** Set the earliest and latest times for game swapping.
 - **Hotkeys:** Define hotkeys for marking a game as completed.
 
 ### Shuffle Management
-- **BizHawk Integration:** Launch the BizHawk executable added in the Configuration.
+- **BizHawk Integration:** Launch the BizHawk executable via the path added in the Configuration. 
 - **Shuffle Controls:** Start, pause, and resume game shuffling.
 
 ### Stats Tracking

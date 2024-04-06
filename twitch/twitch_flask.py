@@ -37,7 +37,7 @@ def oauth_twitch():
     error = request.args.get('error')
     if code:
         try:
-            logging.debug("Emitting code_received signal with code: %s", code)
+            logging.debug("Emitting code_received signal with code.")
             flask_thread.code_received.emit(code)
             # Log after emitting the signal
             logging.debug("Signal emitted")

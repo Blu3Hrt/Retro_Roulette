@@ -12,7 +12,7 @@ if not os.path.exists(log_folder):
 log_file = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + ".log"
 log_path = os.path.join(log_folder, log_file)
 
-logging.basicConfig(filename=log_path, encoding='utf-8', level=logging.DEBUG)
+logging.basicConfig(filename=log_path, encoding='utf-8', level=logging.WARNING)
 def main():
     app = QApplication(sys.argv)
     main_window = MainWindow()
