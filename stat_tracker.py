@@ -10,7 +10,7 @@ class StatsTracker:
             self.game_stats = {}
             self.total_swaps = 0
             self.total_shuffling_time = 0
-        self.start_time = None
+        self.start_time = time.time()
 
     def start_game(self, game_name):
         self.total_swaps += 1
@@ -35,11 +35,14 @@ class StatsTracker:
     def get_stats(self):
         return self.game_stats, self.total_swaps, self.total_shuffling_time
 
-    def reset_stats(self):
-        self.game_stats = {}
+    def reset_all_stats(self):
+        for game_name in self.game_stats:
+            self.game_stats[game_name] = {'swaps': 0, 'time_spent': 0}
         self.total_swaps = 0
         self.total_shuffling_time = 0
-        self.start_time = None
+        self.start_time = time.time()
+        self.total_formatted_shuffling_time = self.format_time(self.total_shuffling_time)
+        
 
 
 

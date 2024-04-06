@@ -53,10 +53,11 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 
 ### Shuffle Management
 - **BizHawk Integration:** Launch the BizHawk executable via the path added in the Configuration. 
-- **Shuffle Controls:** Start, pause, and resume game shuffling.
+- **Shuffle Controls:** Start, stop, pause, and resume game shuffling.
 
 ### Stats Tracking
 - **Session Statistics:** View statistics for the entire session and individual games.
+- **Reset Sats:** Reset statistics for the entire session and individual games.
 - **File Output:** Outputs game swaps and time spent to text files. (Goal tracking coming soon)
 - **OBS Integration:** Useful for displaying stats through OBS.
 

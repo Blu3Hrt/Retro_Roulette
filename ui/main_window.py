@@ -304,7 +304,7 @@ class MainWindow(QMainWindow):
         try:
             games_dir = self.setup_games_directory()
             file_names, _ = QFileDialog.getOpenFileNames(self, "Select Games", games_dir, 
-                                                        "Game Files (*.nes *.snes *.gbc *.gba *.md *.nds)")
+                                                        "Game Files (" + " ".join("*" + ext for ext in SUPPORTED_EXTENSIONS) + ")")
             added_any = False
             for file_name in file_names:
                 added_any = self.add_game_if_supported(file_name, added_any)
@@ -468,6 +468,7 @@ class MainWindow(QMainWindow):
             ("Start Shuffle", self.start_shuffle),
             ("Pause Shuffle", self.pause_shuffle),
             ("Resume Shuffle", self.resume_shuffle),
+            ("Stop Shuffle", self.stop_shuffle)
         ]
         for text, slot in shuffle_buttons:
             button = self.create_button(text, slot)
@@ -505,7 +506,7 @@ class MainWindow(QMainWindow):
 
     def start_shuffle(self):
         if self.is_shuffling:
-            self.statusBar().showMessage("Shuffle is already active.")
+            self.statusBar().showMessage("Shuffle is already active.", 5000)
             return
 
         if not self.current_session_name:
@@ -554,7 +555,7 @@ class MainWindow(QMainWindow):
             self.remaining_shuffle_time = self.shuffle_timer.remainingTime()
             self.shuffle_timer.stop()
             logging.info("Paused shuffle for %d seconds", self.remaining_shuffle_time // 1000)
-            self.statusBar().showMessage("Shuffle paused.")
+            self.statusBar().showMessage("Shuffle paused.", 5000)
 
     def resume_shuffle(self):
         if not self.is_shuffling and self.game_manager.games:
@@ -562,13 +563,26 @@ class MainWindow(QMainWindow):
             if self.remaining_shuffle_time is not None:
                 self.shuffle_timer.start(self.remaining_shuffle_time)
                 logging.info("Resumed shuffle for %d seconds", self.remaining_shuffle_time // 1000)
-                self.statusBar().showMessage("Shuffle resumed.")
+                self.statusBar().showMessage("Shuffle resumed.", 5000)
                 self.remaining_shuffle_time = None
             else:
                 self.shuffle_games()
 
-
-
+    def stop_shuffle(self):
+        if self.is_shuffling:
+            self.is_shuffling = False
+            self.shuffle_timer.stop()
+            self.game_manager.stats_tracker.end_game(self.game_manager.current_game)
+            self.remaining_shuffle_time = None
+            self.game_manager.current_game = None
+            self.update_and_save_session()
+            logging.info("Shuffle stopped.")
+            self.statusBar().showMessage("Shuffle stopped.", 5000)
+        else:
+            logging.warning("Shuffle is not active.")
+            self.statusBar().showMessage("Shuffle is not active.", 5000)
+            
+    
     def shuffle_games(self):
         if not self.is_shuffling:
             logging.info("Shuffling is disabled.")
@@ -878,8 +892,9 @@ class MainWindow(QMainWindow):
         
         self.output_individual_game_stats_checkbox = QCheckBox("Output Individual Game Stats")
         self.output_total_stats_checkbox = QCheckBox("Output Total Stats")
-        self.output_current_game_stats_checkbox = QCheckBox("Output Current Game Stats")
-
+        self.output_current_game_stats_checkbox = QCheckBox("Output Current Game Stats")   
+        self.reset_stats_button = QPushButton("Reset Stats")
+        self.reset_stats_button.clicked.connect(self.reset_stats)
         
 
         layout.addWidget(self.total_swaps_label)
@@ -887,7 +902,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.game_name_label)
         layout.addWidget(self.current_game_swaps_label)
         layout.addWidget(self.current_game_time_label)
-
+        layout.addWidget(self.reset_stats_button)
         return tab
 
         
@@ -937,7 +952,10 @@ class MainWindow(QMainWindow):
             f.write(self.format_time(current_game_stats['time_spent'] + self.calculate_real_time_total(0) if current_game else 0))
 
     def calculate_real_time_total(self, total_time):
-        return total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
+        start_time = self.game_manager.stats_tracker.start_time
+        if start_time is None:
+            start_time = time.time()  # Or some other appropriate value
+        return total_time + (time.time() - start_time if self.game_manager.current_game else 0)
 
     def set_label_text(self, label, prefix, value):
         label.setText(f"{prefix}: {value}")
@@ -948,9 +966,11 @@ class MainWindow(QMainWindow):
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-
-
-
+    def reset_stats(self):
+        self.game_manager.stats_tracker.reset_all_stats()
+        self.update_stats_display()
+        self.statusBar().showMessage("Stats reset.", 5000)
+        self.update_and_save_session()
 
     def create_button(self, text, slot):
         button = QPushButton(text)
@@ -1470,7 +1490,7 @@ class MainWindow(QMainWindow):
         pause_shuffle_enabled = self.pause_shuffle_enabled_checkbox.isChecked()
         force_swap_enabled = self.force_swap_enabled_checkbox.isChecked()
         self.twitch_integration.create_rewards(pause_shuffle_cost, force_swap_cost, pause_shuffle_cooldown, force_swap_cooldown, pause_shuffle_enabled, force_swap_enabled)
-        self.statusBar().showMessage("Channel Point Rewards created successfully.")
+        self.statusBar().showMessage("Channel Point Rewards created successfully.", 5000)
 
     def authenticate_with_twitch(self):
         self.twitch_integration.open_authentication_url()
