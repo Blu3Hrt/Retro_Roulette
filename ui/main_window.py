@@ -908,6 +908,33 @@ class MainWindow(QMainWindow):
             self.set_label_text(self.current_game_swaps_label, "Current Game Swaps", current_game_stats['swaps'])
             self.set_label_text(self.current_game_time_label, "Current Game Time", self.format_time(current_game_stats['time_spent'] + self.calculate_real_time_total(0) if current_game else 0))
             self.update_session_info()
+            
+            
+            self.output_stats_to_files(total_swaps, real_time_total, current_game, current_game_stats)
+
+    def output_stats_to_files(self, total_swaps, real_time_total, current_game, current_game_stats):
+        session_dir = self.get_session_path(self.current_session_name)
+        stats_dir = os.path.join(session_dir, 'stats')
+        os.makedirs(stats_dir, exist_ok=True)  # Ensure the stats directory exists
+
+        # Define file paths
+        total_swaps_file = os.path.join(stats_dir, 'total_swaps.txt')
+        total_time_file = os.path.join(stats_dir, 'total_time.txt')
+        current_game_file = os.path.join(stats_dir, 'current_game.txt')
+        current_game_swaps_file = os.path.join(stats_dir, 'current_game_swaps.txt')
+        current_game_time_file = os.path.join(stats_dir, 'current_game_time.txt')
+
+        # Write stats to files
+        with open(total_swaps_file, 'w') as f:
+            f.write(str(total_swaps))
+        with open(total_time_file, 'w') as f:
+            f.write(self.format_time(real_time_total))
+        with open(current_game_file, 'w') as f:
+            f.write(current_game or "None")
+        with open(current_game_swaps_file, 'w') as f:
+            f.write(str(current_game_stats['swaps']))
+        with open(current_game_time_file, 'w') as f:
+            f.write(self.format_time(current_game_stats['time_spent'] + self.calculate_real_time_total(0) if current_game else 0))
 
     def calculate_real_time_total(self, total_time):
         return total_time + (time.time() - self.game_manager.stats_tracker.start_time if self.game_manager.current_game else 0)
