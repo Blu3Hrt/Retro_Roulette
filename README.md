@@ -8,7 +8,7 @@
 Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro_Roulette/releases) section. The zip file contains:
 - `Retro Roulette.exe`: Main executable file.
 - `bizhawk_server.lua`: Lua server script. Place it in the same directory as the `.exe`.
-- `Lua` folder: Contains files to be placed in the Lua subfolder of the Bizhawk directory.
+- `Lua` folder: Contains files to be placed in the Lua subfolder of the Bizhawk directory. If asked, overwrite existing files.
 
 ## Getting Started
 ### Initial Configuration
@@ -22,7 +22,7 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 2. **Customize Game Names and Goals:** Rename games as desired and set personal goals for completion.
 
 ### Shuffle Management
-1. **Launch BizHawk:** Click 'Launch BizHawk' to start the emulator with the necessary Lua script.
+1. **Launch BizHawk:** Click 'Launch BizHawk' to start the emulator with the necessary Lua script. *DO NOT CLOSE THE LUA CONSOLE!*
 2. **Start and Manage Shuffle:** Begin the game shuffle. Use 'Pause Shuffle' to stick to the current game (timer continues running) and 'Resume Shuffle' to continue where you left off.
 3. **Stats Tracking:** Access statistics in the Stats tab and check the files written in the Stats subdirectory.
 
@@ -65,11 +65,11 @@ Download the latest release from the [Releases](https://github.com/Blu3Hrt/Retro
 
 ## Using with OBS
 
-For streamers, here are some tips for integrating Retro Roulette with OBS:
+To ensure the best streaming experience with OBS, follow these suggestions:
 
-- **Full Screen Mode:** Play in full screen to maintain a consistent capture size, which is especially helpful if you're not familiar with advanced OBS settings.
-- **Window Capture:** If you do use windowed mode, set up a window capture source for consistent streaming quality across different games.
-- **Disable Messages:** In Retro Roulette, go to `View` and uncheck `Display Messages` to prevent save/load messages from appearing during your stream.
+- **Play in Full Screen:** Use full screen mode for a uniform capture size. This is recommended unless you're comfortable with more advanced OBS settings for capturing multiple window sizes.
+- **Static Window Titles:** In BizHawk, navigate to `Config -> Display... -> Misc` tab and enable "Keep window titles static". This helps prevent issues with window capture in OBS.
+- **Disable Save/Load Messages:** To avoid save/load messages displaying on stream, go to `View` in Retro Roulette and uncheck `Display Messages`.
 
 
 
