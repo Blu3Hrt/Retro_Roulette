@@ -26,18 +26,6 @@ SUPPORTED_EXTENSIONS = (
     '.wsc', '.bin', '.dat', '.lst', '.ipa', '.apk',
     '.obb')
 
-def get_base_path():
-    if getattr(sys, 'frozen', False):
-        # Running as a compiled executable
-        base_path = os.path.dirname(sys.executable)
-    else:
-        # Running as a script
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    # Change working directory to base_path
-    os.chdir(base_path)
-    return base_path
-
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -1028,18 +1016,13 @@ class MainWindow(QMainWindow):
         self.session_dropdown.addItems(available_sessions)
 
 
-            
     def get_available_sessions(self):
-        base_path = get_base_path()
-        logging.debug(f"Base path: {base_path}")  # This line added for logging
-        sessions_dir = os.path.join(base_path, "sessions")
-        logging.debug(f"Sessions directory: {sessions_dir}")  # And this one too
+        sessions_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sessions")
         try:
             return [name for name in os.listdir(sessions_dir) if os.path.isdir(os.path.join(sessions_dir, name))]
         except FileNotFoundError:
             logging.error("Sessions directory not found.")
             return []
-
     
     def load_session_from_dropdown(self):
         selected_session_index = self.session_dropdown.currentIndex()
@@ -1047,12 +1030,12 @@ class MainWindow(QMainWindow):
             selected_session_index
         ):
             self.load_session(selected_session_name)
-    
+            
     def load_session_from_file(self):
         session_file_path = QFileDialog.getOpenFileName(self, "Load Session", "", "Session Files (*.json)")[0]
         if session_file_path:
             with open(session_file_path, 'r') as file:
-                self.session_data_load(file)
+                self.session_data_load(file)            
         
     def load_session(self, session_name):
         session_folder = self.get_session_path(session_name)

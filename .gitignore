@@ -3136,3 +3136,4 @@ RR/main.dist/psutil/_psutil_windows.pyd
 RR/main.dist/shiboken6/Shiboken.pyd
 RR/main.dist/zstandard/_cffi.pyd
 RR/main.dist/zstandard/backend_c.pyd
+dist/Test/bizhawk_server.lua
