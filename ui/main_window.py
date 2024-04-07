@@ -7,7 +7,7 @@ from session_manager import SessionManager
 from stat_tracker import StatsTracker
 from twitch.twitch_flask import flask_thread
 from twitch.twitch_integration import TwitchIntegration
-from style import Style
+from ui.style import Style
 from pathlib import Path
 import Python_Client
 
@@ -983,7 +983,6 @@ class MainWindow(QMainWindow):
 
         buttons_info = [
             ("Create New Session", self.create_new_session),
-            ("Save Current Session As...", self.save_current_session_as_new),
             ("Rename Selected Session", self.rename_current_session),
             ("Delete Selected Session", self.delete_current_session),
             ("Load Session...", self.load_session_from_file)
@@ -994,10 +993,10 @@ class MainWindow(QMainWindow):
         self.session_info_label = QLabel("Load a session to view details")
         layout.addWidget(self.session_info_label)
 
-        self.session_dropdown = QComboBox(self)
-        self.populate_session_dropdown()
-        self.session_dropdown.currentIndexChanged.connect(self.load_session_from_dropdown)
-        layout.addWidget(self.session_dropdown)
+        # self.session_dropdown = QComboBox(self)
+        # self.populate_session_dropdown()
+        # self.session_dropdown.currentIndexChanged.connect(self.load_session_from_dropdown)
+        # layout.addWidget(self.session_dropdown)
 
         tab.setLayout(layout)
         return tab
@@ -1010,10 +1009,10 @@ class MainWindow(QMainWindow):
             self.game_manager.load_save_states(session_data['save_states'])
             self.current_session_name = 'Default Session'
 
-    def populate_session_dropdown(self):
-        self.session_dropdown.clear()
-        available_sessions = self.get_available_sessions()
-        self.session_dropdown.addItems(available_sessions)
+    # def populate_session_dropdown(self):
+    #     self.session_dropdown.clear()
+    #     available_sessions = self.get_available_sessions()
+    #     self.session_dropdown.addItems(available_sessions)
 
 
     def get_available_sessions(self):
@@ -1024,12 +1023,12 @@ class MainWindow(QMainWindow):
             logging.error("Sessions directory not found.")
             return []
     
-    def load_session_from_dropdown(self):
-        selected_session_index = self.session_dropdown.currentIndex()
-        if selected_session_name := self.session_dropdown.itemText(
-            selected_session_index
-        ):
-            self.load_session(selected_session_name)
+    # def load_session_from_dropdown(self):
+    #     selected_session_index = self.session_dropdown.currentIndex()
+    #     if selected_session_name := self.session_dropdown.itemText(
+    #         selected_session_index
+    #     ):
+    #         self.load_session(selected_session_name)
             
     def load_session_from_file(self):
         session_file_path = QFileDialog.getOpenFileName(self, "Load Session", "", "Session Files (*.json)")[0]
@@ -1110,6 +1109,7 @@ class MainWindow(QMainWindow):
             self.refresh_ui()
             self.populate_session_dropdown()
             self.session_dropdown.setCurrentText(new_session_name)
+            
             QMessageBox.information(self, "Session Created", f"Session '{new_session_name}' has been created successfully.")
                 
     def save_current_session(self):
@@ -1296,8 +1296,8 @@ class MainWindow(QMainWindow):
             self.load_session('Default Session')
 
         # Ensure the dropdown is reflecting the current session
-        self.populate_session_dropdown()
-        self.session_dropdown.setCurrentText(last_session_name)        
+        # self.populate_session_dropdown()
+        # self.session_dropdown.setCurrentText(last_session_name)        
             
     def save_current_session_as_new(self):
         new_session_name, ok = QInputDialog.getText(self, 'Save Current Session As', 'Enter new session name:')
