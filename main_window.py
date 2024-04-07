@@ -7,7 +7,7 @@ from session_manager import SessionManager
 from stat_tracker import StatsTracker
 from twitch.twitch_flask import flask_thread
 from twitch.twitch_integration import TwitchIntegration
-from ui.style import Style
+from style import Style
 from pathlib import Path
 import Python_Client
 
